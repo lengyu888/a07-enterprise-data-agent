@@ -4,8 +4,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from app.api.catalog import router as catalog_router
+from app.api.knowledge import router as knowledge_router
+from app.catalog.service import refresh_catalog
 from app.core.config import get_settings
 from app.core.database import check_database, read_project_stage
+from app.core.migrations import run_migrations
 from app.integrations.deepseek import DeepSeekGateway
 
 
@@ -18,6 +22,8 @@ class HealthResponse(BaseModel):
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     get_settings()
+    run_migrations()
+    refresh_catalog()
     yield
 
 
@@ -33,9 +39,12 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:8080"],
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Content-Type"],
 )
+
+app.include_router(catalog_router)
+app.include_router(knowledge_router)
 
 
 @app.get("/api/health", response_model=HealthResponse, tags=["system"])
@@ -71,7 +80,7 @@ def bootstrap() -> dict[str, object]:
         "phase": read_project_stage(),
         "architecture": ["Vue 3", "FastAPI", "PostgreSQL + pgvector"],
         "core_innovation": ["DeepSeek", "LangGraph", "RAG", "Text-to-SQL"],
-        "next_milestone": "数据资源目录与业务知识管理",
+        "next_milestone": "最薄质量问析 Agent 闭环",
     }
 
 
@@ -93,4 +102,3 @@ def probe_deepseek() -> dict[str, str]:
         "model": result.model,
         "content": result.content,
     }
-

@@ -24,7 +24,7 @@ services:
       context: ./services/app
     environment:
       APP_ENV: local
-      APP_VERSION: 0.1.0
+      APP_VERSION: 0.2.0
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-a07_app}:${POSTGRES_PASSWORD:-a07_local_dev_change_me}@postgres:5432/${POSTGRES_DB:-a07_agent}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-pro}

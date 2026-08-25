@@ -6,15 +6,19 @@
 
 ## 当前阶段
 
-阶段 0：Git 与三容器工程骨架。
+阶段 1：数据与知识底座（本地测试候选版）。
 
 - Vue 3 Web 工作台；
 - FastAPI 模块化单体；
 - PostgreSQL 16 + pgvector；
-- DeepSeek 服务端适配器骨架；
+- 9 张主演示表 + 1 张未知 Schema 留出表，固定业务日期 `2025-12-29`；
+- 约 11.8 万行可解释制造业数据，覆盖质量、设备、生产三个主题；
+- PostgreSQL 表/字段/注释/样例/外键自动扫描与关系图；
+- 业务主题、对象、指标、规则、同义词，以及指标口径 CRUD；
+- DeepSeek 服务端适配器；
 - Docker Compose 本地构建、健康检查与验收脚本。
 
-业务 Agent、数据目录、RAG 和 Text-to-SQL 将按阶段计划逐步实现。
+LangGraph Agent、混合 RAG 和 Text-to-SQL 将按后续阶段逐步实现。
 
 ## 本地启动
 
@@ -38,10 +42,10 @@
 
 4. 打开工作台：<http://localhost:8080>
 
-5. 执行阶段 0 冒烟测试。
+5. 执行当前阶段冒烟测试。
 
    ```powershell
-   powershell -ExecutionPolicy Bypass -File .\scripts\test-stage0.ps1
+   powershell -ExecutionPolicy Bypass -File .\scripts\test-stage1.ps1
    ```
 
 6. 停止服务。
@@ -67,7 +71,17 @@ Set-Content -NoNewline .secrets\deepseek_api_key 'your_key'
 docker compose -f compose.yml -f compose.deepseek.yml up --build -d
 ```
 
-阶段 0 的 `/api/v1/system/deepseek/probe` 可验证用户提供的 OpenAI SDK 兼容调用方式。未配置 Secret 不影响基础三容器验收。不要运行会展开环境变量值的配置命令并把输出粘贴到公开日志。
+`/api/v1/system/deepseek/probe` 可验证用户提供的 OpenAI SDK 兼容调用方式。未配置 Secret 不影响基础三容器验收。不要运行会展开环境变量值的配置命令并把输出粘贴到公开日志。
+
+## 阶段 1 API
+
+- `GET /api/v1/catalog/summary`：目录统计与固定业务日期；
+- `GET /api/v1/catalog/tables`：数据表目录；
+- `GET /api/v1/catalog/tables/{id}`：字段、类型、注释和样例；
+- `GET /api/v1/catalog/relations`：真实外键关系；
+- `POST /api/v1/catalog/refresh`：重新扫描 PostgreSQL 元数据；
+- `GET /api/v1/knowledge/overview`：主题、规则和同义词；
+- `GET/POST/PUT/DELETE /api/v1/knowledge/metrics`：指标口径维护。
 
 ## 文档
 
