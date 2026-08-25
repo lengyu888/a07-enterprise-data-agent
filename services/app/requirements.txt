@@ -1,4 +1,5 @@
 fastapi==0.116.1
+fastembed==0.8.0
 langgraph==1.2.11
 openai==1.102.0
 pgvector==0.4.1

@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from app.core.database import get_engine
+from app.rag.indexer import refresh_index
 
 
 router = APIRouter(prefix="/api/v1/knowledge", tags=["knowledge"])
@@ -92,7 +93,8 @@ def create_metric(payload: MetricInput) -> dict[str, object]:
              "dimensions": __import__("json").dumps(payload.dimensions, ensure_ascii=False),
              "mapped_tables": __import__("json").dumps(payload.mapped_tables, ensure_ascii=False)},
         )
-    return {"status": "created", "metric_code": payload.metric_code}
+    index_result = refresh_index()
+    return {"status": "created", "metric_code": payload.metric_code, "rag_embedded": index_result["embedded"]}
 
 
 @router.put("/metrics/{metric_code}")
@@ -116,7 +118,8 @@ def update_metric(metric_code: str, payload: MetricInput) -> dict[str, object]:
         )
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="metric not found")
-    return {"status": "updated", "metric_code": metric_code}
+    index_result = refresh_index()
+    return {"status": "updated", "metric_code": metric_code, "rag_embedded": index_result["embedded"]}
 
 
 @router.delete("/metrics/{metric_code}", status_code=status.HTTP_204_NO_CONTENT)
@@ -127,4 +130,5 @@ def delete_metric(metric_code: str) -> Response:
         )
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="metric not found")
+    refresh_index()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

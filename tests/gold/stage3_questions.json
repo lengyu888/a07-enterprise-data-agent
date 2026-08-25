@@ -1,0 +1,17 @@
+[
+  {"question":"分析本月各工序良率，找出良率最低的工序","metric":"yield_rate","tables":["demo.fact_quality_inspection","demo.dim_process"]},
+  {"question":"本月各产品合格率排名","metric":"yield_rate","tables":["demo.fact_quality_inspection","demo.dim_product"]},
+  {"question":"对比本月各工序不良率","metric":"defect_rate","tables":["demo.fact_quality_inspection","demo.dim_process"]},
+  {"question":"哪个工序本月缺陷率最高","metric":"defect_rate","tables":["demo.fact_quality_inspection","demo.dim_process"]},
+  {"question":"本月各设备非计划停机时长排名","metric":"downtime_minutes","tables":["demo.fact_equipment_event","demo.dim_equipment"]},
+  {"question":"找出本月停机时间最长的设备","metric":"downtime_minutes","tables":["demo.fact_equipment_event","demo.dim_equipment"]},
+  {"question":"本月非计划停机原因分布","metric":"downtime_minutes","tables":["demo.fact_equipment_event"]},
+  {"question":"最近30天设备停机时长趋势","metric":"downtime_minutes","tables":["demo.fact_equipment_event"]},
+  {"question":"本月各产线完工产量排名","metric":"final_output","tables":["demo.fact_process_output","demo.dim_line"]},
+  {"question":"最近30天每日完工产量趋势","metric":"final_output","tables":["demo.fact_process_output"]},
+  {"question":"本月各产线计划达成率","metric":"plan_attainment","tables":["demo.fact_process_output","demo.fact_work_order","demo.dim_line"]},
+  {"question":"哪条产线本月计划完成率最低","metric":"plan_attainment","tables":["demo.fact_process_output","demo.fact_work_order","demo.dim_line"]},
+  {"question":"本月各工序合格率对比","metric":"yield_rate","tables":["demo.fact_quality_inspection","demo.dim_process"]},
+  {"question":"最近30天非计划宕机时间变化","metric":"downtime_minutes","tables":["demo.fact_equipment_event"]},
+  {"question":"本月各产线实际产量对比","metric":"final_output","tables":["demo.fact_process_output","demo.dim_line"]}
+]

@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     app_name: str = "A07 企业数据底座智能问析 Agent"
     app_env: str = "local"
-    app_version: str = "0.3.0"
+    app_version: str = "0.4.0"
     database_url: str = "postgresql+psycopg://a07_app:a07_local_dev_change_me@postgres:5432/a07_agent"
 
     deepseek_api_key: str | None = Field(default=None, repr=False)
@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4-pro"
     deepseek_reasoning_effort: Literal["high", "max"] = "high"
+    embedding_model: str = "BAAI/bge-small-zh-v1.5"
+    embedding_cache_path: str = "/opt/fastembed-cache"
 
     @property
     def deepseek_configured(self) -> bool:

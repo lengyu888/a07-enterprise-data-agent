@@ -16,8 +16,8 @@ type AgentTrace = { node_name: string; display_name: string; status: string; dur
 type AgentRun = {
   run_id: string; status: string; question: string; model: string; generation_mode: string; duration_ms: number
   time_range: { start: string; end: string; anchor: string }; plan: string[]
-  evidence: { metric: { name: string; formula: string; version: string }; rule: string; tables: string[]; relations: Array<{ source_table: string; source_column: string; target_table: string; target_column: string }> }
-  sql: { text: string; validation: string; referenced_tables: string[] }
+  evidence: { metric: { code: string; name: string; formula: string; version: string }; rule: string; rules: Array<Record<string, string>>; tables: string[]; relations: Array<{ source_table: string; source_column: string; target_table: string; target_column: string }>; items: Array<{ id: number; source_type: string; source_id: string; title: string; score: number; channels: string[] }>; retrieval: { strategy: string; top_k: number; channel_hits: Record<string, number>; context_reduction_pct: number } }
+  sql: { text: string; validation: string; repair_count: number; referenced_tables: string[] }
   result: { columns: string[]; rows: Array<Record<string, string | number>>; row_count: number }
   chart: { type: string; title: string; x_field: string; y_field: string; unit: string; categories: string[]; series: Array<{ name: string; data: number[] }> }
   answer: string; trace: AgentTrace[]
@@ -47,6 +47,11 @@ const agentQuestion = ref('分析本月各工序良率，找出良率最低的�
 const agentRunning = ref(false)
 const agentError = ref('')
 const agentResult = ref<AgentRun | null>(null)
+const agentExamples = [
+  { scene: '质量分析', code: 'QUALITY', question: '分析本月各工序良率，找出良率最低的工序' },
+  { scene: '设备停机', code: 'EQUIPMENT', question: '本月各设备非计划停机时长排名' },
+  { scene: '生产达成', code: 'PRODUCTION', question: '本月各产线计划达成率' },
+]
 const metricForm = reactive<Metric>({ metric_code: '', topic_code: 'quality', metric_name: '', description: '', formula: '', unit: '%', grain: '日期×产线', dimensions: [], mapped_tables: [], owner_name: '比赛项目组', version: '1.0', status: 'draft' })
 
 const systemReady = computed(() => ready.value?.status === 'ready')
@@ -69,7 +74,20 @@ function graphPosition(tableName: string) {
 function formatNumber(value = 0) { return new Intl.NumberFormat('zh-CN').format(value) }
 function formatDate(value?: string) { return value ? new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(value)) : '—' }
 function formatDuration(value = 0) { return value >= 1000 ? `${(value / 1000).toFixed(1)} s` : `${value} ms` }
-function chartHeight(value: number) { return `${Math.max(8, Math.min(100, (value - 90) * 10))}%` }
+const chartValues = computed(() => agentResult.value?.chart.series[0]?.data ?? [])
+const chartBaseline = computed(() => {
+  const values = chartValues.value
+  if (!values.length) return 0
+  const minimum = Math.min(...values)
+  return agentResult.value?.chart.unit === '%' && minimum > 80 ? Math.floor(minimum - 2) : 0
+})
+const chartCeiling = computed(() => Math.max(...chartValues.value, chartBaseline.value + 1))
+function chartHeight(value: number) { return `${Math.max(8, Math.min(100, 100 * (value - chartBaseline.value) / (chartCeiling.value - chartBaseline.value)))}%` }
+function lineX(index: number) { return chartValues.value.length <= 1 ? 400 : 55 + index * 690 / (chartValues.value.length - 1) }
+function lineY(value: number) { return 235 - 190 * (value - chartBaseline.value) / (chartCeiling.value - chartBaseline.value) }
+const linePoints = computed(() => chartValues.value.map((value, index) => `${lineX(index)},${lineY(value)}`).join(' '))
+function columnLabel(column: string) { return ({ process_name: '工序', product_name: '产品', equipment_name: '设备', event_reason: '原因', line_name: '产线', business_date: '日期', yield_rate: '良率', defect_rate: '不良率', downtime_minutes: '停机时长', final_output: '完工产量', plan_attainment: '计划达成率', inspected_qty: '检验数量' } as Record<string, string>)[column] || column }
+function formatCell(value: string | number, column: string) { return typeof value === 'number' ? `${formatNumber(value)}${['yield_rate', 'defect_rate', 'plan_attainment'].includes(column) ? '%' : ''}` : value }
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, options)
   if (!response.ok) {
@@ -160,7 +178,7 @@ onMounted(loadWorkspace)
         <div class="topic-grid">
           <article v-for="(topic, index) in topics" :key="topic.topic_code" :style="{ '--topic': topic.accent_color }"><div class="topic-number">0{{ index + 1 }}</div><span>{{ topic.topic_code.toUpperCase() }}</span><h3>{{ topic.topic_name }}</h3><p>{{ topic.description }}</p><footer><b>{{ topic.metric_count }}</b> 指标 · <b>{{ topic.rule_count }}</b> 强规则 · <b>{{ topic.object_count }}</b> 对象</footer></article>
         </div>
-        <section class="next-band"><span>NEXT / PHASE 02</span><h3>{{ bootstrap?.next_milestone }}</h3><p>理解 → 精确 Schema 检索 → SQL → 安全执行 → 柱状图 → 结论</p><div><i></i></div></section>
+        <section class="next-band"><span>NEXT / PHASE 04</span><h3>{{ bootstrap?.next_milestone }}</h3><p>混合 RAG → DeepSeek 规划 → Text-to-SQL → 安全执行/修复 → 动态图表 → 有据结论</p><div><i></i></div></section>
       </section>
 
       <section v-if="activeView === 'catalog'" class="catalog-view">
@@ -186,17 +204,17 @@ onMounted(loadWorkspace)
       <section v-if="activeView === 'agent'" class="agent-view">
         <header class="agent-hero">
           <div>
-            <p class="section-code">PHASE 02 / AGENT THIN SLICE</p>
+            <p class="section-code">PHASE 03 / HYBRID RAG + TEXT-TO-SQL</p>
             <h2>一句话，<span>走完分析链路</span></h2>
             <p>不是聊天演示：问题经过业务理解、证据检索、DeepSeek Text-to-SQL、安全校验与只读执行，最后生成图表和可追溯结论。</p>
           </div>
-          <div class="agent-badge"><b>8</b><span>LANGGRAPH<br />NODES</span></div>
+          <div class="agent-badge"><b>3</b><span>RAG ROUTES<br />RRF FUSION</span></div>
         </header>
 
         <form class="query-console" @submit.prevent="runAgent">
           <div class="console-index"><span>ASK</span><strong>01</strong></div>
           <label>
-            <span>制造数据问题 / 当前 MVP 支持质量场景</span>
+            <span>制造数据问题 / 质量 · 设备 · 生产基础问析</span>
             <textarea v-model="agentQuestion" rows="2" maxlength="300" aria-label="分析问题"></textarea>
           </label>
           <button type="submit" :disabled="agentRunning">
@@ -205,6 +223,12 @@ onMounted(loadWorkspace)
             <b>{{ agentRunning ? '请稍候' : '→' }}</b>
           </button>
         </form>
+        <div class="example-switcher">
+          <span>QUICK TEST /</span>
+          <button v-for="example in agentExamples" :key="example.code" :class="{ active: agentQuestion === example.question }" @click="agentQuestion = example.question">
+            <small>{{ example.code }}</small><b>{{ example.scene }}</b><i>→</i>
+          </button>
+        </div>
         <div v-if="agentRunning" class="agent-progress"><i></i><p><strong>DeepSeek 正在推理并生成 SQL</strong><span>完整链路通常需要 30–90 秒，请保持页面开启。</span></p></div>
         <div v-if="agentError" class="agent-error"><strong>本次执行未完成</strong><p>{{ agentError }}</p><button @click="runAgent">重新运行</button></div>
 
@@ -217,8 +241,14 @@ onMounted(loadWorkspace)
             <code>{{ agentResult.run_id }}</code>
           </section>
 
+          <section class="rag-ledger">
+            <div class="rag-title"><p class="section-code">HYBRID RETRIEVAL LEDGER</p><h3>EvidenceBundle 是怎么找出来的</h3><span>{{ agentResult.evidence.retrieval.strategy }}</span></div>
+            <div v-for="channel in ['exact', 'fuzzy', 'vector']" :key="channel" class="rag-channel"><span>{{ channel.toUpperCase() }}</span><strong>{{ agentResult.evidence.retrieval.channel_hits[channel] ?? 0 }}</strong><small>候选命中</small></div>
+            <div class="rag-reduction"><span>CONTEXT CUT</span><strong>{{ agentResult.evidence.retrieval.context_reduction_pct }}%</strong><small>相对全量上下文</small></div>
+          </section>
+
           <section class="trace-section">
-            <header><div><p class="section-code">VISIBLE REASONING PIPELINE</p><h3>Agent 执行轨迹</h3></div><span>{{ agentResult.trace.length }} / 8 COMPLETED</span></header>
+            <header><div><p class="section-code">VISIBLE EXECUTION PIPELINE</p><h3>Agent 执行轨迹</h3></div><span>{{ agentResult.trace.filter((step) => step.status === 'completed').length }} STEPS COMPLETED</span></header>
             <div class="trace-rail">
               <article v-for="(step, index) in agentResult.trace" :key="step.node_name">
                 <div class="trace-number">{{ String(index + 1).padStart(2, '0') }}</div>
@@ -235,9 +265,10 @@ onMounted(loadWorkspace)
               <div class="rule-proof"><span>强规则</span><p>{{ agentResult.evidence.rule }}</p></div>
               <div class="table-proof"><span v-for="table in agentResult.evidence.tables" :key="table">{{ table }}</span></div>
               <div v-for="relation in agentResult.evidence.relations" :key="relation.source_table" class="join-proof"><code>{{ relation.source_table }}.{{ relation.source_column }}</code><b>→ VERIFIED JOIN →</b><code>{{ relation.target_table }}.{{ relation.target_column }}</code></div>
+              <div class="source-proof"><span v-for="item in agentResult.evidence.items.slice(0, 6)" :key="item.id"><b>{{ item.source_type }}</b>{{ item.title }}<small>{{ item.channels.join(' + ') }}</small></span></div>
             </section>
             <section class="sql-card">
-              <header><div><p class="section-code">TEXT-TO-SQL ARTIFACT</p><h3>生成并执行的 SQL</h3></div><span><i></i>SQLGLOT {{ agentResult.sql.validation.toUpperCase() }}</span></header>
+              <header><div><p class="section-code">TEXT-TO-SQL ARTIFACT</p><h3>生成并执行的 SQL</h3></div><span><i></i>SQLGLOT {{ agentResult.sql.validation.toUpperCase() }} · REPAIR {{ agentResult.sql.repair_count }}/2</span></header>
               <pre><code>{{ agentResult.sql.text }}</code></pre>
               <footer><span>READ ONLY TRANSACTION</span><span>TIMEOUT 5S</span><span>LIMIT ≤ 100</span></footer>
             </section>
@@ -247,15 +278,22 @@ onMounted(loadWorkspace)
             <header><div><p class="section-code">EXECUTED RESULT / NOT MOCKED</p><h3>{{ agentResult.chart.title }}</h3></div><div class="date-range">{{ agentResult.time_range.start }}<b>→</b>{{ agentResult.time_range.end }}</div></header>
             <div class="result-grid">
               <div class="yield-chart" role="img" :aria-label="agentResult.chart.title">
-                <div class="chart-scale"><span>100%</span><span>95%</span><span>90%</span></div>
-                <div v-for="(category, index) in agentResult.chart.categories" :key="category" class="bar-column">
-                  <strong>{{ agentResult.chart.series[0].data[index] }}%</strong>
-                  <div class="bar-track"><i :style="{ height: chartHeight(agentResult.chart.series[0].data[index]) }"></i></div>
-                  <span>{{ category }}</span>
-                </div>
+                <div class="chart-scale"><span>{{ chartCeiling }}{{ agentResult.chart.unit }}</span><span>{{ ((chartCeiling + chartBaseline) / 2).toFixed(1) }}{{ agentResult.chart.unit }}</span><span>{{ chartBaseline }}{{ agentResult.chart.unit }}</span></div>
+                <template v-if="agentResult.chart.type === 'bar'">
+                  <div v-for="(category, index) in agentResult.chart.categories" :key="category" class="bar-column">
+                    <strong>{{ agentResult.chart.series[0].data[index] }}{{ agentResult.chart.unit }}</strong>
+                    <div class="bar-track"><i :style="{ height: chartHeight(agentResult.chart.series[0].data[index]) }"></i></div>
+                    <span>{{ category }}</span>
+                  </div>
+                </template>
+                <svg v-else class="line-plot" viewBox="0 0 800 280" preserveAspectRatio="none" aria-hidden="true">
+                  <line v-for="y in [45, 140, 235]" :key="y" x1="55" :y1="y" x2="745" :y2="y" />
+                  <polyline :points="linePoints" />
+                  <g v-for="(value, index) in agentResult.chart.series[0].data" :key="index"><circle :cx="lineX(index)" :cy="lineY(value)" r="6" /><text :x="lineX(index)" :y="lineY(value) - 13">{{ value }}</text><text class="axis-label" :x="lineX(index)" y="262">{{ agentResult.chart.categories[index].slice(5) }}</text></g>
+                </svg>
               </div>
               <div class="result-table-wrap">
-                <table><thead><tr><th>工序</th><th>良率</th><th>检验数量</th></tr></thead><tbody><tr v-for="row in agentResult.result.rows" :key="String(row.process_name)"><td>{{ row.process_name }}</td><td><b>{{ row.yield_rate }}%</b></td><td>{{ formatNumber(Number(row.inspected_qty)) }}</td></tr></tbody></table>
+                <table><thead><tr><th v-for="column in agentResult.result.columns" :key="column">{{ columnLabel(column) }}</th></tr></thead><tbody><tr v-for="(row, rowIndex) in agentResult.result.rows" :key="rowIndex"><td v-for="column in agentResult.result.columns" :key="column"><b v-if="column === agentResult.chart.y_field">{{ formatCell(row[column], column) }}</b><template v-else>{{ formatCell(row[column], column) }}</template></td></tr></tbody></table>
                 <p>{{ agentResult.result.row_count }} ROWS · PostgreSQL 实时查询结果</p>
               </div>
             </div>

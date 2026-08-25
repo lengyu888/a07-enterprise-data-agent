@@ -7,11 +7,13 @@ from pydantic import BaseModel
 from app.api.agent import router as agent_router
 from app.api.catalog import router as catalog_router
 from app.api.knowledge import router as knowledge_router
+from app.api.rag import router as rag_router
 from app.catalog.service import refresh_catalog
 from app.core.config import get_settings
 from app.core.database import check_database, read_project_stage
 from app.core.migrations import run_migrations
 from app.integrations.deepseek import DeepSeekGateway
+from app.rag.indexer import ensure_index
 
 
 class HealthResponse(BaseModel):
@@ -25,6 +27,7 @@ async def lifespan(_: FastAPI):
     get_settings()
     run_migrations()
     refresh_catalog()
+    ensure_index()
     yield
 
 
@@ -47,6 +50,7 @@ app.add_middleware(
 app.include_router(catalog_router)
 app.include_router(knowledge_router)
 app.include_router(agent_router)
+app.include_router(rag_router)
 
 
 @app.get("/api/health", response_model=HealthResponse, tags=["system"])
@@ -82,7 +86,7 @@ def bootstrap() -> dict[str, object]:
         "phase": read_project_stage(),
         "architecture": ["Vue 3", "FastAPI", "PostgreSQL + pgvector"],
         "core_innovation": ["DeepSeek", "LangGraph", "RAG", "Text-to-SQL"],
-        "next_milestone": "混合 RAG 与通用 Text-to-SQL",
+        "next_milestone": "质量场景扩展与缺陷 Pareto",
     }
 
 
