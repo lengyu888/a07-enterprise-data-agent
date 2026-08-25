@@ -12,8 +12,18 @@ type Topic = { topic_code: string; topic_name: string; description: string; acce
 type Rule = { rule_code: string; topic_code: string; rule_name: string; rule_content: string }
 type Synonym = { topic_code: string; canonical_term: string; synonym_term: string }
 type Metric = { metric_code: string; topic_code: 'quality' | 'equipment' | 'production'; metric_name: string; description: string; formula: string; unit: string; grain: string; dimensions: string[]; mapped_tables: string[]; owner_name: string; version: string; status: 'draft' | 'published' | 'disabled' }
+type AgentTrace = { node_name: string; display_name: string; status: string; duration_ms: number; summary: string; payload: Record<string, unknown> }
+type AgentRun = {
+  run_id: string; status: string; question: string; model: string; generation_mode: string; duration_ms: number
+  time_range: { start: string; end: string; anchor: string }; plan: string[]
+  evidence: { metric: { name: string; formula: string; version: string }; rule: string; tables: string[]; relations: Array<{ source_table: string; source_column: string; target_table: string; target_column: string }> }
+  sql: { text: string; validation: string; referenced_tables: string[] }
+  result: { columns: string[]; rows: Array<Record<string, string | number>>; row_count: number }
+  chart: { type: string; title: string; x_field: string; y_field: string; unit: string; categories: string[]; series: Array<{ name: string; data: number[] }> }
+  answer: string; trace: AgentTrace[]
+}
 
-const activeView = ref<'overview' | 'catalog' | 'knowledge'>('overview')
+const activeView = ref<'overview' | 'catalog' | 'knowledge' | 'agent'>('overview')
 const ready = ref<ReadyPayload | null>(null)
 const bootstrap = ref<BootstrapPayload | null>(null)
 const summary = ref<CatalogSummary | null>(null)
@@ -33,6 +43,10 @@ const metricEditorOpen = ref(false)
 const editingMetric = ref(false)
 const dimensionText = ref('')
 const mappedTableText = ref('')
+const agentQuestion = ref('分析本月各工序良率，找出良率最低的工序')
+const agentRunning = ref(false)
+const agentError = ref('')
+const agentResult = ref<AgentRun | null>(null)
 const metricForm = reactive<Metric>({ metric_code: '', topic_code: 'quality', metric_name: '', description: '', formula: '', unit: '%', grain: '日期×产线', dimensions: [], mapped_tables: [], owner_name: '比赛项目组', version: '1.0', status: 'draft' })
 
 const systemReady = computed(() => ready.value?.status === 'ready')
@@ -54,11 +68,14 @@ function graphPosition(tableName: string) {
 }
 function formatNumber(value = 0) { return new Intl.NumberFormat('zh-CN').format(value) }
 function formatDate(value?: string) { return value ? new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(value)) : '—' }
+function formatDuration(value = 0) { return value >= 1000 ? `${(value / 1000).toFixed(1)} s` : `${value} ms` }
+function chartHeight(value: number) { return `${Math.max(8, Math.min(100, (value - 90) * 10))}%` }
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, options)
   if (!response.ok) {
-    const payload = await response.json().catch(() => ({})) as { detail?: string }
-    throw new Error(payload.detail || `请求失败：${response.status}`)
+    const payload = await response.json().catch(() => ({})) as { detail?: string | { message?: string } }
+    const detail = typeof payload.detail === 'string' ? payload.detail : payload.detail?.message
+    throw new Error(detail || `请求失败：${response.status}`)
   }
   return response.status === 204 ? (undefined as T) : await response.json() as T
 }
@@ -100,6 +117,16 @@ async function saveMetric() {
   await fetchJson(path, { method: editingMetric.value ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(metricForm) })
   metricEditorOpen.value = false; metrics.value = await fetchJson<Metric[]>('/api/v1/knowledge/metrics')
 }
+async function runAgent() {
+  if (agentRunning.value || !agentQuestion.value.trim()) return
+  agentRunning.value = true; agentError.value = ''; agentResult.value = null
+  try {
+    agentResult.value = await fetchJson<AgentRun>('/api/v1/agent/runs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: agentQuestion.value.trim() }),
+    })
+  } catch (cause) { agentError.value = cause instanceof Error ? cause.message : 'Agent 执行失败' }
+  finally { agentRunning.value = false }
+}
 onMounted(loadWorkspace)
 </script>
 
@@ -114,6 +141,7 @@ onMounted(loadWorkspace)
       <button :class="{ active: activeView === 'overview' }" @click="activeView = 'overview'">总览 <span>01</span></button>
       <button :class="{ active: activeView === 'catalog' }" @click="activeView = 'catalog'">数据目录 <span>02</span></button>
       <button :class="{ active: activeView === 'knowledge' }" @click="activeView = 'knowledge'">业务知识 <span>03</span></button>
+      <button :class="{ active: activeView === 'agent' }" @click="activeView = 'agent'">智能问析 <span>04</span></button>
       <div class="system-pill" :class="{ ready: systemReady }"><i></i>{{ systemReady ? 'SYSTEM READY' : 'CONNECTING' }}</div>
     </nav>
     <div v-if="error" class="error-banner">{{ error }} <button @click="loadWorkspace">重试</button></div>
@@ -153,6 +181,88 @@ onMounted(loadWorkspace)
         <header class="section-header"><div><p class="section-code">BUSINESS SEMANTIC LAYER</p><h2>业务知识管理</h2></div><button class="primary-action compact" @click="newMetric">新增指标 <b>＋</b></button></header>
         <div class="topic-tabs"><button :class="{ active: selectedTopic === 'all' }" @click="selectedTopic = 'all'">全部</button><button v-for="topic in topics" :key="topic.topic_code" :class="{ active: selectedTopic === topic.topic_code }" @click="selectedTopic = topic.topic_code">{{ topic.topic_name }}</button></div>
         <div class="knowledge-layout"><div class="metric-list"><article v-for="metric in visibleMetrics" :key="metric.metric_code" @click="editMetric(metric)"><header><span>{{ topics.find((item) => item.topic_code === metric.topic_code)?.topic_name }}</span><i :class="metric.status">{{ metric.status }}</i></header><h3>{{ metric.metric_name }} <small>{{ metric.unit }}</small></h3><p>{{ metric.description }}</p><code>{{ metric.formula }}</code><footer><span>粒度：{{ metric.grain }}</span><span>v{{ metric.version }} · {{ metric.owner_name }}</span></footer></article></div><aside class="rule-stack"><div><p class="section-code">NON-NEGOTIABLE</p><h3>Agent 强规则</h3></div><article v-for="rule in rules" :key="rule.rule_code"><span>{{ rule.topic_code }}</span><strong>{{ rule.rule_name }}</strong><p>{{ rule.rule_content }}</p></article><div class="synonym-cloud"><p class="section-code">SYNONYMS</p><span v-for="item in synonyms" :key="`${item.canonical_term}-${item.synonym_term}`">{{ item.synonym_term }} → {{ item.canonical_term }}</span></div></aside></div>
+      </section>
+
+      <section v-if="activeView === 'agent'" class="agent-view">
+        <header class="agent-hero">
+          <div>
+            <p class="section-code">PHASE 02 / AGENT THIN SLICE</p>
+            <h2>一句话，<span>走完分析链路</span></h2>
+            <p>不是聊天演示：问题经过业务理解、证据检索、DeepSeek Text-to-SQL、安全校验与只读执行，最后生成图表和可追溯结论。</p>
+          </div>
+          <div class="agent-badge"><b>8</b><span>LANGGRAPH<br />NODES</span></div>
+        </header>
+
+        <form class="query-console" @submit.prevent="runAgent">
+          <div class="console-index"><span>ASK</span><strong>01</strong></div>
+          <label>
+            <span>制造数据问题 / 当前 MVP 支持质量场景</span>
+            <textarea v-model="agentQuestion" rows="2" maxlength="300" aria-label="分析问题"></textarea>
+          </label>
+          <button type="submit" :disabled="agentRunning">
+            <span v-if="agentRunning" class="button-spinner"></span>
+            {{ agentRunning ? 'Agent 分析中' : '启动智能问析' }}
+            <b>{{ agentRunning ? '请稍候' : '→' }}</b>
+          </button>
+        </form>
+        <div v-if="agentRunning" class="agent-progress"><i></i><p><strong>DeepSeek 正在推理并生成 SQL</strong><span>完整链路通常需要 30–90 秒，请保持页面开启。</span></p></div>
+        <div v-if="agentError" class="agent-error"><strong>本次执行未完成</strong><p>{{ agentError }}</p><button @click="runAgent">重新运行</button></div>
+
+        <template v-if="agentResult">
+          <section class="run-summary">
+            <div><span>RUN STATUS</span><strong><i></i>{{ agentResult.status.toUpperCase() }}</strong></div>
+            <div><span>MODEL</span><strong>{{ agentResult.model }}</strong></div>
+            <div><span>SQL MODE</span><strong>{{ agentResult.generation_mode === 'deepseek' ? 'DEEPSEEK' : 'GUARDED FALLBACK' }}</strong></div>
+            <div><span>DURATION</span><strong>{{ formatDuration(agentResult.duration_ms) }}</strong></div>
+            <code>{{ agentResult.run_id }}</code>
+          </section>
+
+          <section class="trace-section">
+            <header><div><p class="section-code">VISIBLE REASONING PIPELINE</p><h3>Agent 执行轨迹</h3></div><span>{{ agentResult.trace.length }} / 8 COMPLETED</span></header>
+            <div class="trace-rail">
+              <article v-for="(step, index) in agentResult.trace" :key="step.node_name">
+                <div class="trace-number">{{ String(index + 1).padStart(2, '0') }}</div>
+                <div><span>{{ step.node_name }}</span><h4>{{ step.display_name }}</h4><p>{{ step.summary }}</p></div>
+                <time>{{ formatDuration(step.duration_ms) }}</time>
+              </article>
+            </div>
+          </section>
+
+          <div class="evidence-sql-grid">
+            <section class="evidence-card">
+              <header><p class="section-code">GROUNDED EVIDENCE</p><h3>本次证据包</h3></header>
+              <div class="metric-proof"><span>指标口径 · v{{ agentResult.evidence.metric.version }}</span><strong>{{ agentResult.evidence.metric.name }}</strong><code>{{ agentResult.evidence.metric.formula }}</code></div>
+              <div class="rule-proof"><span>强规则</span><p>{{ agentResult.evidence.rule }}</p></div>
+              <div class="table-proof"><span v-for="table in agentResult.evidence.tables" :key="table">{{ table }}</span></div>
+              <div v-for="relation in agentResult.evidence.relations" :key="relation.source_table" class="join-proof"><code>{{ relation.source_table }}.{{ relation.source_column }}</code><b>→ VERIFIED JOIN →</b><code>{{ relation.target_table }}.{{ relation.target_column }}</code></div>
+            </section>
+            <section class="sql-card">
+              <header><div><p class="section-code">TEXT-TO-SQL ARTIFACT</p><h3>生成并执行的 SQL</h3></div><span><i></i>SQLGLOT {{ agentResult.sql.validation.toUpperCase() }}</span></header>
+              <pre><code>{{ agentResult.sql.text }}</code></pre>
+              <footer><span>READ ONLY TRANSACTION</span><span>TIMEOUT 5S</span><span>LIMIT ≤ 100</span></footer>
+            </section>
+          </div>
+
+          <section class="result-section">
+            <header><div><p class="section-code">EXECUTED RESULT / NOT MOCKED</p><h3>{{ agentResult.chart.title }}</h3></div><div class="date-range">{{ agentResult.time_range.start }}<b>→</b>{{ agentResult.time_range.end }}</div></header>
+            <div class="result-grid">
+              <div class="yield-chart" role="img" :aria-label="agentResult.chart.title">
+                <div class="chart-scale"><span>100%</span><span>95%</span><span>90%</span></div>
+                <div v-for="(category, index) in agentResult.chart.categories" :key="category" class="bar-column">
+                  <strong>{{ agentResult.chart.series[0].data[index] }}%</strong>
+                  <div class="bar-track"><i :style="{ height: chartHeight(agentResult.chart.series[0].data[index]) }"></i></div>
+                  <span>{{ category }}</span>
+                </div>
+              </div>
+              <div class="result-table-wrap">
+                <table><thead><tr><th>工序</th><th>良率</th><th>检验数量</th></tr></thead><tbody><tr v-for="row in agentResult.result.rows" :key="String(row.process_name)"><td>{{ row.process_name }}</td><td><b>{{ row.yield_rate }}%</b></td><td>{{ formatNumber(Number(row.inspected_qty)) }}</td></tr></tbody></table>
+                <p>{{ agentResult.result.row_count }} ROWS · PostgreSQL 实时查询结果</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="answer-card"><span>AGENT CONCLUSION</span><div class="quote-mark">“</div><p>{{ agentResult.answer }}</p><footer>结论基于检验数据与已发布指标口径 <b>·</b> 不推断未提供的根因</footer></section>
+        </template>
       </section>
     </template>
 

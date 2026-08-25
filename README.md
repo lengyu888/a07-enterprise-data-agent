@@ -6,7 +6,7 @@
 
 ## 当前阶段
 
-阶段 1：数据与知识底座（本地测试候选版）。
+阶段 2：最薄 Agent 闭环（本地测试候选版，等待用户确认）。
 
 - Vue 3 Web 工作台；
 - FastAPI 模块化单体；
@@ -16,9 +16,15 @@
 - PostgreSQL 表/字段/注释/样例/外键自动扫描与关系图；
 - 业务主题、对象、指标、规则、同义词，以及指标口径 CRUD；
 - DeepSeek 服务端适配器；
+- LangGraph 八节点质量问析链路；
+- 业务口径、强规则、Schema 与真实 Join 关系的精确证据检索；
+- DeepSeek Text-to-SQL 与结构化输出契约；
+- SQLGlot 单条只读 SQL、表白名单、语义字段、限行与时间边界校验；
+- PostgreSQL 只读事务执行、5 秒超时与结果快照；
+- Agent 轨迹、证据包、SQL、结果表、良率柱状图与有据结论；
 - Docker Compose 本地构建、健康检查与验收脚本。
 
-LangGraph Agent、混合 RAG 和 Text-to-SQL 将按后续阶段逐步实现。
+当前 MVP 只支持“分析本月各工序良率，找出良率最低的工序”。混合 RAG、通用 Text-to-SQL 与设备/生产场景将在后续阶段实现。
 
 ## 本地启动
 
@@ -45,7 +51,7 @@ LangGraph Agent、混合 RAG 和 Text-to-SQL 将按后续阶段逐步实现。
 5. 执行当前阶段冒烟测试。
 
    ```powershell
-   powershell -ExecutionPolicy Bypass -File .\scripts\test-stage1.ps1
+   powershell -ExecutionPolicy Bypass -File .\scripts\test-stage2.ps1
    ```
 
 6. 停止服务。
@@ -73,7 +79,13 @@ docker compose -f compose.yml -f compose.deepseek.yml up --build -d
 
 `/api/v1/system/deepseek/probe` 可验证用户提供的 OpenAI SDK 兼容调用方式。未配置 Secret 不影响基础三容器验收。不要运行会展开环境变量值的配置命令并把输出粘贴到公开日志。
 
-## 阶段 1 API
+## 阶段 2 Agent API
+
+- `GET /api/v1/agent/capabilities`：MVP 场景、问题与八节点链路边界；
+- `POST /api/v1/agent/runs`：执行真实质量问析；
+- `GET /api/v1/agent/runs`：最近运行及审计状态。
+
+阶段 1 的数据目录与业务知识 API 继续保留：
 
 - `GET /api/v1/catalog/summary`：目录统计与固定业务日期；
 - `GET /api/v1/catalog/tables`：数据表目录；

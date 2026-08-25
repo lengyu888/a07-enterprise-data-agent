@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from app.api.agent import router as agent_router
 from app.api.catalog import router as catalog_router
 from app.api.knowledge import router as knowledge_router
 from app.catalog.service import refresh_catalog
@@ -45,6 +46,7 @@ app.add_middleware(
 
 app.include_router(catalog_router)
 app.include_router(knowledge_router)
+app.include_router(agent_router)
 
 
 @app.get("/api/health", response_model=HealthResponse, tags=["system"])
@@ -80,7 +82,7 @@ def bootstrap() -> dict[str, object]:
         "phase": read_project_stage(),
         "architecture": ["Vue 3", "FastAPI", "PostgreSQL + pgvector"],
         "core_innovation": ["DeepSeek", "LangGraph", "RAG", "Text-to-SQL"],
-        "next_milestone": "最薄质量问析 Agent 闭环",
+        "next_milestone": "混合 RAG 与通用 Text-to-SQL",
     }
 
 

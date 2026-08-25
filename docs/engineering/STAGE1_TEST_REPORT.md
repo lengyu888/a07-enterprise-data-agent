@@ -60,4 +60,4 @@ powershell -ExecutionPolicy Bypass -File .\scripts\test-stage1.ps1
 - [x] 亮色视觉改版符合预期；
 - [x] 同意提交、创建 `phase-1` 标签并推送 GitHub。
 
-用户确认前，不提交阶段 1，不创建标签，不推送该阶段分支。
+阶段 1 已由用户确认，提交 `71be240`、标签 `phase-1` 和分支 `phase/01-data-knowledge` 已推送 GitHub。

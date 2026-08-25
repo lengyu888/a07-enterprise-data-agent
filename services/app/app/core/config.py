@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     app_name: str = "A07 企业数据底座智能问析 Agent"
     app_env: str = "local"
-    app_version: str = "0.2.0"
+    app_version: str = "0.3.0"
     database_url: str = "postgresql+psycopg://a07_app:a07_local_dev_change_me@postgres:5432/a07_agent"
 
     deepseek_api_key: str | None = Field(default=None, repr=False)
