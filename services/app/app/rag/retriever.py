@@ -11,7 +11,7 @@ from app.rag.embedding import embed_texts, vector_literal
 
 
 TOPIC_TERMS = {
-    "quality": ("质量", "良率", "合格率", "不良率", "缺陷率", "检验", "工序", "产品"),
+    "quality": ("质量", "良率", "合格率", "不良率", "缺陷率", "缺陷", "Pareto", "帕累托", "环比", "检验", "工序", "产品"),
     "equipment": ("设备", "停机", "宕机", "报警", "故障", "异常"),
     "production": ("生产", "产量", "完工", "计划", "达成率", "完成率", "产线", "趋势"),
 }
@@ -37,6 +37,8 @@ def _expanded_terms(question: str) -> list[str]:
 
 
 def _explicit_metric_code(question: str, topic: str | None) -> str | None:
+    if topic == "quality" and any(term in question for term in ("Pareto", "帕累托", "缺陷类型", "缺陷数量")):
+        return "defect_count"
     with get_engine().connect() as connection:
         metrics = [dict(row) for row in connection.execute(text(
             "SELECT metric_code, metric_name, topic_code FROM app.metric WHERE status='published' ORDER BY length(metric_name) DESC"
@@ -98,7 +100,7 @@ def _ranked_channels(question: str) -> tuple[dict[str, list[dict[str, Any]]], st
 def retrieve_evidence(question: str, top_k: int = 10) -> dict[str, Any]:
     channels, topic = _ranked_channels(question)
     if topic is None:
-        raise ValueError("阶段 3 仅支持包含明确制造主题和已发布指标的分析问题")
+        raise ValueError("当前比赛版仅支持包含明确制造主题和已发布指标的分析问题")
     fused: dict[int, float] = defaultdict(float)
     contributions: dict[int, list[str]] = defaultdict(list)
     by_id: dict[int, dict[str, Any]] = {}
@@ -119,7 +121,7 @@ def retrieve_evidence(question: str, top_k: int = 10) -> dict[str, Any]:
 
     explicit_metric = _explicit_metric_code(question, topic)
     if explicit_metric is None:
-        raise ValueError("阶段 3 仅支持包含良率、不良率、停机时长、完工产量或计划达成率的分析问题")
+        raise ValueError("当前比赛版仅支持包含良率、不良率、缺陷数量、停机时长、完工产量或计划达成率的分析问题")
     metric_item = next((item for item in items if item["metadata"].get("kind") == "metric" and (explicit_metric is None or item["metadata"].get("metric_code") == explicit_metric)), None)
     if metric_item is None and explicit_metric:
         with get_engine().connect() as connection:

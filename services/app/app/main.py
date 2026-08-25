@@ -86,7 +86,7 @@ def bootstrap() -> dict[str, object]:
         "phase": read_project_stage(),
         "architecture": ["Vue 3", "FastAPI", "PostgreSQL + pgvector"],
         "core_innovation": ["DeepSeek", "LangGraph", "RAG", "Text-to-SQL"],
-        "next_milestone": "质量场景扩展与缺陷 Pareto",
+        "next_milestone": "设备异常识别与异常下钻",
     }
 
 

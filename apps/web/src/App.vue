@@ -23,7 +23,26 @@ type AgentRun = {
   answer: string; trace: AgentTrace[]
 }
 
-const activeView = ref<'overview' | 'catalog' | 'knowledge' | 'agent'>('overview')
+type QualityBrief = {
+  run_id: string; status: string; duration_ms: number
+  period: { start: string; end: string; anchor: string; previous_month: string }
+  assessment: {
+    current_yield: number; previous_yield: number; yield_delta_pp: number; inspected_qty: number; unqualified_qty: number; status: string
+    worst_process: { process_name: string; yield_rate: number; inspected_qty: number }
+    top_defect: { defect_type: string; defect_count: number; defect_share: number; cumulative_share: number }
+    vital_few: string[]
+  }
+  brief: { headline: string; summary: string; risks: string[]; actions: string[]; generation_mode: string }
+  charts: {
+    process: Array<{ process_name: string; yield_rate: number; inspected_qty: number }>
+    pareto: Array<{ defect_type: string; defect_count: number; defect_share: number; cumulative_share: number }>
+    trend: Array<{ business_date: string; yield_rate: number }>
+  }
+  evidence: Array<{ question: string; metric: string; metric_code: string; formula: string; tables: string[]; top_sources: string[] }>
+  trace: AgentTrace[]
+}
+
+const activeView = ref<'overview' | 'catalog' | 'knowledge' | 'quality' | 'agent'>('overview')
 const ready = ref<ReadyPayload | null>(null)
 const bootstrap = ref<BootstrapPayload | null>(null)
 const summary = ref<CatalogSummary | null>(null)
@@ -47,6 +66,9 @@ const agentQuestion = ref('分析本月各工序良率，找出良率最低的�
 const agentRunning = ref(false)
 const agentError = ref('')
 const agentResult = ref<AgentRun | null>(null)
+const qualityBrief = ref<QualityBrief | null>(null)
+const qualityBriefRunning = ref(false)
+const qualityBriefError = ref('')
 const agentExamples = [
   { scene: '质量分析', code: 'QUALITY', question: '分析本月各工序良率，找出良率最低的工序' },
   { scene: '设备停机', code: 'EQUIPMENT', question: '本月各设备非计划停机时长排名' },
@@ -86,8 +108,16 @@ function chartHeight(value: number) { return `${Math.max(8, Math.min(100, 100 * 
 function lineX(index: number) { return chartValues.value.length <= 1 ? 400 : 55 + index * 690 / (chartValues.value.length - 1) }
 function lineY(value: number) { return 235 - 190 * (value - chartBaseline.value) / (chartCeiling.value - chartBaseline.value) }
 const linePoints = computed(() => chartValues.value.map((value, index) => `${lineX(index)},${lineY(value)}`).join(' '))
-function columnLabel(column: string) { return ({ process_name: '工序', product_name: '产品', equipment_name: '设备', event_reason: '原因', line_name: '产线', business_date: '日期', yield_rate: '良率', defect_rate: '不良率', downtime_minutes: '停机时长', final_output: '完工产量', plan_attainment: '计划达成率', inspected_qty: '检验数量' } as Record<string, string>)[column] || column }
-function formatCell(value: string | number, column: string) { return typeof value === 'number' ? `${formatNumber(value)}${['yield_rate', 'defect_rate', 'plan_attainment'].includes(column) ? '%' : ''}` : value }
+const paretoLinePoints = computed(() => (agentResult.value?.chart.series[1]?.data ?? []).map((value, index, values) => `${values.length <= 1 ? 400 : 70 + index * 660 / (values.length - 1)},${245 - 2 * value}`).join(' '))
+const qualityTrendPoints = computed(() => {
+  const values = qualityBrief.value?.charts.trend.map((item) => item.yield_rate) ?? []
+  if (!values.length) return ''
+  const min = Math.floor(Math.min(...values) - 0.5); const max = Math.ceil(Math.max(...values) + 0.5)
+  return values.map((value, index) => `${values.length <= 1 ? 400 : 45 + index * 710 / (values.length - 1)},${220 - 165 * (value - min) / Math.max(max - min, 1)}`).join(' ')
+})
+const qualityParetoMax = computed(() => Math.max(...(qualityBrief.value?.charts.pareto.map((item) => item.defect_count) ?? [1])))
+function columnLabel(column: string) { return ({ process_name: '工序', product_name: '产品', equipment_name: '设备', event_reason: '原因', line_name: '产线', business_date: '日期', business_month: '月份', defect_type: '缺陷类型', yield_rate: '良率', defect_rate: '不良率', defect_count: '缺陷数量', cumulative_share: '累计占比', downtime_minutes: '停机时长', final_output: '完工产量', plan_attainment: '计划达成率', inspected_qty: '检验数量' } as Record<string, string>)[column] || column }
+function formatCell(value: string | number, column: string) { return typeof value === 'number' ? `${formatNumber(value)}${['yield_rate', 'defect_rate', 'plan_attainment', 'cumulative_share'].includes(column) ? '%' : ''}` : value }
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, options)
   if (!response.ok) {
@@ -145,6 +175,16 @@ async function runAgent() {
   } catch (cause) { agentError.value = cause instanceof Error ? cause.message : 'Agent 执行失败' }
   finally { agentRunning.value = false }
 }
+async function generateQualityBrief() {
+  if (qualityBriefRunning.value) return
+  qualityBriefRunning.value = true; qualityBriefError.value = ''
+  try { qualityBrief.value = await fetchJson<QualityBrief>('/api/v1/agent/quality/brief', { method: 'POST' }) }
+  catch (cause) { qualityBriefError.value = cause instanceof Error ? cause.message : '质量简报生成失败' }
+  finally { qualityBriefRunning.value = false }
+}
+function openQualityQuestion(question: string) {
+  agentQuestion.value = question; agentResult.value = null; agentError.value = ''; activeView.value = 'agent'
+}
 onMounted(loadWorkspace)
 </script>
 
@@ -159,7 +199,8 @@ onMounted(loadWorkspace)
       <button :class="{ active: activeView === 'overview' }" @click="activeView = 'overview'">总览 <span>01</span></button>
       <button :class="{ active: activeView === 'catalog' }" @click="activeView = 'catalog'">数据目录 <span>02</span></button>
       <button :class="{ active: activeView === 'knowledge' }" @click="activeView = 'knowledge'">业务知识 <span>03</span></button>
-      <button :class="{ active: activeView === 'agent' }" @click="activeView = 'agent'">智能问析 <span>04</span></button>
+      <button :class="{ active: activeView === 'quality' }" @click="activeView = 'quality'">质量驾驶舱 <span>04</span></button>
+      <button :class="{ active: activeView === 'agent' }" @click="activeView = 'agent'">智能问析 <span>05</span></button>
       <div class="system-pill" :class="{ ready: systemReady }"><i></i>{{ systemReady ? 'SYSTEM READY' : 'CONNECTING' }}</div>
     </nav>
     <div v-if="error" class="error-banner">{{ error }} <button @click="loadWorkspace">重试</button></div>
@@ -168,7 +209,7 @@ onMounted(loadWorkspace)
     <template v-else>
       <section v-if="activeView === 'overview'" class="overview-view">
         <div class="hero-grid">
-          <article class="hero-copy"><p class="section-code">PHASE 01 / DATA & KNOWLEDGE FOUNDATION</p><h2>先让 Agent<br />真正<span>看懂数据</span></h2><p>目录来自 PostgreSQL 实时扫描，指标口径与 Join 规则由业务知识明确约束。后续 RAG 和 Text-to-SQL 只在这套证据上工作。</p><button class="primary-action" @click="activeView = 'catalog'">进入数据目录 <b>→</b></button></article>
+          <article class="hero-copy"><p class="section-code">PHASE 04 / QUALITY ANALYSIS SPECIALIZATION</p><h2>让 Agent<br />真正<span>解释质量</span></h2><p>从质量指标、缺陷 Pareto、趋势环比到管理层简报，每个结论都回到 PostgreSQL 真实结果和可追溯 EvidenceBundle。</p><button class="primary-action" @click="activeView = 'quality'">打开质量驾驶舱 <b>→</b></button></article>
           <article class="date-card"><span>DATASET ANCHOR</span><strong>{{ summary?.dataset_max_business_date }}</strong><p>所有“本月 / 最近 30 天”等相对时间均以此业务日期为准。</p></article>
         </div>
         <div class="stat-strip">
@@ -201,10 +242,96 @@ onMounted(loadWorkspace)
         <div class="knowledge-layout"><div class="metric-list"><article v-for="metric in visibleMetrics" :key="metric.metric_code" @click="editMetric(metric)"><header><span>{{ topics.find((item) => item.topic_code === metric.topic_code)?.topic_name }}</span><i :class="metric.status">{{ metric.status }}</i></header><h3>{{ metric.metric_name }} <small>{{ metric.unit }}</small></h3><p>{{ metric.description }}</p><code>{{ metric.formula }}</code><footer><span>粒度：{{ metric.grain }}</span><span>v{{ metric.version }} · {{ metric.owner_name }}</span></footer></article></div><aside class="rule-stack"><div><p class="section-code">NON-NEGOTIABLE</p><h3>Agent 强规则</h3></div><article v-for="rule in rules" :key="rule.rule_code"><span>{{ rule.topic_code }}</span><strong>{{ rule.rule_name }}</strong><p>{{ rule.rule_content }}</p></article><div class="synonym-cloud"><p class="section-code">SYNONYMS</p><span v-for="item in synonyms" :key="`${item.canonical_term}-${item.synonym_term}`">{{ item.synonym_term }} → {{ item.canonical_term }}</span></div></aside></div>
       </section>
 
+      <section v-if="activeView === 'quality'" class="quality-view">
+        <header class="quality-hero">
+          <div class="quality-hero-copy">
+            <p class="section-code">PHASE 04 / QUALITY INTELLIGENCE ROOM</p>
+            <h2>质量，不止一个<span>良率</span></h2>
+            <p>LangGraph 将良率环比、工序短板、缺陷 Pareto 和每日趋势编排成同一份有据简报。所有数据截至 <b>2025-12-29</b>，不把相关性包装成根因。</p>
+            <div class="quality-actions">
+              <button class="quality-generate" :disabled="qualityBriefRunning" @click="generateQualityBrief">
+                <span v-if="qualityBriefRunning" class="button-spinner"></span>
+                {{ qualityBriefRunning ? '正在编排质量简报' : qualityBrief ? '重新生成质量简报' : '生成本月质量简报' }} <b>↗</b>
+              </button>
+              <small>RAG × 3 · READ-ONLY SQL × 4 · DEEPSEEK BRIEF</small>
+            </div>
+          </div>
+          <div class="quality-seal" aria-hidden="true"><small>QUALITY</small><strong>04</strong><span>DEC / 2025</span></div>
+        </header>
+
+        <div class="quality-question-strip">
+          <span>下钻问析</span>
+          <button @click="openQualityQuestion('本月缺陷类型 Pareto 分析')"><b>01</b> 缺陷 Pareto <i>→</i></button>
+          <button @click="openQualityQuestion('最近30天每日良率趋势')"><b>02</b> 每日良率趋势 <i>→</i></button>
+          <button @click="openQualityQuestion('对比本月与上月总体良率')"><b>03</b> 月度环比 <i>→</i></button>
+        </div>
+
+        <div v-if="qualityBriefError" class="agent-error"><strong>质量简报未完成</strong><p>{{ qualityBriefError }}</p><button @click="generateQualityBrief">重新生成</button></div>
+        <div v-if="qualityBriefRunning" class="quality-loading">
+          <div class="quality-loader"><i></i><i></i><i></i><i></i></div>
+          <div><span>LANGGRAPH QUALITY BRIEF</span><h3>正在汇集质量证据与真实指标</h3><p>检索三组 EvidenceBundle，执行四组只读聚合，再由 DeepSeek 形成管理层简报。</p></div>
+        </div>
+        <section v-else-if="!qualityBrief" class="quality-empty">
+          <div class="empty-figure"><span>Q</span><i></i></div>
+          <div><p class="section-code">READY TO COMPOSE</p><h3>一键生成可演示的质量分析闭环</h3><p>不是静态仪表盘。点击后现场运行 LangGraph、RAG、PostgreSQL 与 DeepSeek，并展示完整轨迹。</p></div>
+        </section>
+
+        <template v-if="qualityBrief && !qualityBriefRunning">
+          <section class="quality-kpis">
+            <article class="kpi-primary"><span>本月总体良率</span><strong>{{ qualityBrief.assessment.current_yield }}<small>%</small></strong><p :class="qualityBrief.assessment.yield_delta_pp < 0 ? 'down' : 'up'">{{ qualityBrief.assessment.yield_delta_pp > 0 ? '+' : '' }}{{ qualityBrief.assessment.yield_delta_pp }} pp <i>环比</i></p></article>
+            <article><span>检验数量</span><strong>{{ formatNumber(qualityBrief.assessment.inspected_qty) }}</strong><small>件 / 12.01—12.29</small></article>
+            <article><span>最低良率工序</span><strong>{{ qualityBrief.assessment.worst_process.process_name }}</strong><small>{{ qualityBrief.assessment.worst_process.yield_rate }}% · {{ formatNumber(qualityBrief.assessment.worst_process.inspected_qty) }} 件检验</small></article>
+            <article class="kpi-alert"><span>首要缺陷</span><strong>{{ qualityBrief.assessment.top_defect.defect_type }}</strong><small>占全部缺陷 {{ qualityBrief.assessment.top_defect.defect_share }}%</small></article>
+          </section>
+
+          <div class="quality-chart-grid">
+            <section class="quality-panel pareto-panel">
+              <header><div><p class="section-code">DEFECT PARETO / 80-20</p><h3>关键缺陷贡献</h3></div><span>{{ qualityBrief.assessment.vital_few.length }} VITAL FEW</span></header>
+              <div class="quality-pareto" role="img" aria-label="缺陷 Pareto 图">
+                <div v-for="item in qualityBrief.charts.pareto" :key="item.defect_type" class="pareto-item">
+                  <div><span>{{ item.defect_type }}</span><b>{{ formatNumber(item.defect_count) }}</b></div>
+                  <i><em :style="{ width: `${100 * item.defect_count / qualityParetoMax}%` }"></em></i>
+                  <small>{{ item.defect_share }}% / 累计 {{ item.cumulative_share }}%</small>
+                </div>
+              </div>
+              <footer>累计占比达到 80% 前：<b>{{ qualityBrief.assessment.vital_few.join('、') }}</b></footer>
+            </section>
+
+            <section class="quality-panel trend-panel">
+              <header><div><p class="section-code">30-DAY YIELD SIGNAL</p><h3>每日良率走势</h3></div><span>30 POINTS</span></header>
+              <div class="quality-trend">
+                <svg viewBox="0 0 800 260" preserveAspectRatio="none" role="img" aria-label="最近30天每日良率趋势">
+                  <line v-for="y in [55, 137, 220]" :key="y" x1="45" :y1="y" x2="755" :y2="y" />
+                  <polyline :points="qualityTrendPoints" />
+                  <circle v-if="qualityBrief.charts.trend.length" cx="755" :cy="qualityTrendPoints.split(' ').at(-1)?.split(',')[1]" r="7" />
+                </svg>
+                <div class="trend-axis"><span>{{ qualityBrief.charts.trend[0]?.business_date.slice(5) }}</span><span>{{ qualityBrief.charts.trend.at(-1)?.business_date.slice(5) }}</span></div>
+              </div>
+              <div class="process-pulse"><span v-for="item in qualityBrief.charts.process" :key="item.process_name"><b>{{ item.yield_rate }}%</b>{{ item.process_name }}</span></div>
+            </section>
+          </div>
+
+          <section class="quality-brief-card">
+            <header><div><p class="section-code">DEEPSEEK MANAGEMENT BRIEF</p><h3>{{ qualityBrief.brief.headline }}</h3></div><span>{{ qualityBrief.brief.generation_mode.toUpperCase() }}</span></header>
+            <p class="brief-summary">{{ qualityBrief.brief.summary }}</p>
+            <div class="brief-columns">
+              <div><span>风险观察</span><ol><li v-for="risk in qualityBrief.brief.risks" :key="risk">{{ risk }}</li></ol></div>
+              <div><span>建议动作</span><ol><li v-for="action in qualityBrief.brief.actions" :key="action">{{ action }}</li></ol></div>
+            </div>
+            <footer><code>{{ qualityBrief.run_id }}</code><span>{{ formatDuration(qualityBrief.duration_ms) }} · 数据边界 {{ qualityBrief.period.start }}—{{ qualityBrief.period.end }}</span></footer>
+          </section>
+
+          <section class="quality-proof-grid">
+            <div class="quality-proof"><p class="section-code">EVIDENCE PACKS</p><article v-for="item in qualityBrief.evidence" :key="item.metric_code"><b>{{ item.metric }}</b><code>{{ item.formula }}</code><span>{{ item.tables.join(' + ') }}</span></article></div>
+            <div class="quality-proof"><p class="section-code">LANGGRAPH TRACE</p><article v-for="(step, index) in qualityBrief.trace" :key="step.node_name"><b>0{{ index + 1 }} · {{ step.display_name }}</b><span>{{ step.summary }}</span><small>{{ formatDuration(step.duration_ms) }}</small></article></div>
+          </section>
+        </template>
+      </section>
+
       <section v-if="activeView === 'agent'" class="agent-view">
         <header class="agent-hero">
           <div>
-            <p class="section-code">PHASE 03 / HYBRID RAG + TEXT-TO-SQL</p>
+            <p class="section-code">PHASE 04 / HYBRID RAG + QUALITY SPECIALIZATION</p>
             <h2>一句话，<span>走完分析链路</span></h2>
             <p>不是聊天演示：问题经过业务理解、证据检索、DeepSeek Text-to-SQL、安全校验与只读执行，最后生成图表和可追溯结论。</p>
           </div>
@@ -286,6 +413,10 @@ onMounted(loadWorkspace)
                     <span>{{ category }}</span>
                   </div>
                 </template>
+                <div v-else-if="agentResult.chart.type === 'pareto'" class="pareto-combo">
+                  <div class="pareto-combo-bars"><div v-for="(category, index) in agentResult.chart.categories" :key="category"><strong>{{ formatNumber(agentResult.chart.series[0].data[index]) }}</strong><i><em :style="{ height: chartHeight(agentResult.chart.series[0].data[index]) }"></em></i><span>{{ category }}</span></div></div>
+                  <svg viewBox="0 0 800 280" preserveAspectRatio="none" aria-hidden="true"><polyline :points="paretoLinePoints" /><g v-for="(value, index) in agentResult.chart.series[1].data" :key="index"><circle :cx="agentResult.chart.series[1].data.length <= 1 ? 400 : 70 + index * 660 / (agentResult.chart.series[1].data.length - 1)" :cy="245 - 2 * value" r="6" /><text :x="agentResult.chart.series[1].data.length <= 1 ? 400 : 70 + index * 660 / (agentResult.chart.series[1].data.length - 1)" :y="230 - 2 * value">{{ value }}%</text></g></svg>
+                </div>
                 <svg v-else class="line-plot" viewBox="0 0 800 280" preserveAspectRatio="none" aria-hidden="true">
                   <line v-for="y in [45, 140, 235]" :key="y" x1="55" :y1="y" x2="745" :y2="y" />
                   <polyline :points="linePoints" />

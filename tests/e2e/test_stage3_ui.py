@@ -22,7 +22,7 @@ def main() -> None:
         page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
         page.goto(BASE_URL)
         page.wait_for_load_state("networkidle")
-        page.get_by_role("button", name="智能问析 04").click()
+        page.get_by_role("button", name="智能问析 05").click()
         assert "RAG ROUTES" in page.locator(".agent-badge").inner_text()
         assert page.locator(".example-switcher button").count() == 3
         page.get_by_role("button", name="启动智能问析 →").click()
@@ -41,7 +41,7 @@ def main() -> None:
         mobile = browser.new_page(viewport={"width": 390, "height": 844})
         mobile.goto(BASE_URL)
         mobile.wait_for_load_state("networkidle")
-        mobile.locator(".view-nav button").nth(3).click()
+        mobile.locator(".view-nav button").nth(4).click()
         mobile.wait_for_timeout(550)
         assert mobile.locator(".example-switcher button").count() == 3
         mobile.screenshot(path=ARTIFACT_DIR / "stage3-rag-agent-mobile.png", full_page=True)

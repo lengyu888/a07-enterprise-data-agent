@@ -1,7 +1,15 @@
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.agent.service import AgentRunError, capabilities, list_recent_runs, run_quality_analysis, stage3_evaluation_summary
+from app.agent.service import (
+    AgentRunError,
+    capabilities,
+    list_recent_runs,
+    run_quality_analysis,
+    run_quality_brief,
+    stage3_evaluation_summary,
+    stage4_evaluation_summary,
+)
 
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
@@ -24,6 +32,19 @@ def recent_runs(limit: int = Query(default=10, ge=1, le=50)) -> list[dict[str, o
 @router.get("/evaluation/stage3")
 def stage3_evaluation() -> dict[str, object]:
     return stage3_evaluation_summary()
+
+
+@router.get("/evaluation/stage4")
+def stage4_evaluation() -> dict[str, object]:
+    return stage4_evaluation_summary()
+
+
+@router.post("/quality/brief")
+def create_quality_brief() -> dict[str, object]:
+    try:
+        return run_quality_brief()
+    except AgentRunError as exc:
+        raise HTTPException(status_code=502, detail={"message": str(exc), "run_id": exc.run_id}) from exc
 
 
 @router.post("/runs")
