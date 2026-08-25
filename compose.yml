@@ -1,0 +1,60 @@
+name: a07-agent
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-a07_agent}
+      POSTGRES_USER: ${POSTGRES_USER:-a07_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-a07_local_dev_change_me}
+    ports:
+      - "${POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - a07_postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-a07_app} -d ${POSTGRES_DB:-a07_agent}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  app:
+    build:
+      context: ./services/app
+    environment:
+      APP_ENV: local
+      APP_VERSION: 0.1.0
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-a07_app}:${POSTGRES_PASSWORD:-a07_local_dev_change_me}@postgres:5432/${POSTGRES_DB:-a07_agent}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-pro}
+      DEEPSEEK_REASONING_EFFORT: ${DEEPSEEK_REASONING_EFFORT:-high}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./apps/web
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  a07_postgres_data:

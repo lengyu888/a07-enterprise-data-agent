@@ -1,0 +1,11 @@
+services:
+  app:
+    environment:
+      DEEPSEEK_API_KEY_FILE: /run/secrets/deepseek_api_key
+    secrets:
+      - deepseek_api_key
+
+secrets:
+  deepseek_api_key:
+    file: ./.secrets/deepseek_api_key
+
