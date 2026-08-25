@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 from app.agent.analysis_graph import HybridAnalysisGraph, SUPPORTED_QUESTIONS
 from app.agent.quality_brief_graph import build_quality_brief
+from app.agent.equipment_anomaly_graph import EquipmentAnomalyGraph
 from app.core.config import get_settings
 from app.core.database import get_engine
 
@@ -155,15 +156,64 @@ def run_quality_brief() -> dict[str, Any]:
         raise AgentRunError(str(exc)[:500], "quality-brief") from exc
 
 
+def run_equipment_diagnosis() -> dict[str, Any]:
+    settings = get_settings()
+    if not settings.deepseek_configured:
+        raise AgentRunError("DeepSeek Secret 未配置，无法生成设备诊断", "not-created")
+    run_id = str(uuid4())
+    started = time.perf_counter()
+    engine = get_engine()
+    with engine.begin() as connection:
+        connection.execute(text("""
+            INSERT INTO app.algorithm_run (run_id, recipe_code, scene, status, model_version)
+            VALUES (:run_id, 'equipment-daily-iforest-v1', 'equipment', 'running', '1.0')
+        """), {"run_id": run_id})
+    try:
+        state = EquipmentAnomalyGraph(settings).invoke(run_id)
+        duration_ms = max(1, round((time.perf_counter() - started) * 1000))
+        anomaly_rows = sum(row["is_anomaly"] for row in state["scored_rows"])
+        top_name = state["assessment"]["top_equipment"]["equipment_name"]
+        with engine.begin() as connection:
+            connection.execute(text("""
+                UPDATE app.algorithm_run SET status='completed', input_rows=:input_rows,
+                    anomaly_rows=:anomaly_rows, top_entity=:top_entity, duration_ms=:duration_ms,
+                    completed_at=NOW() WHERE run_id=:run_id
+            """), {"run_id": run_id, "input_rows": len(state["baseline_rows"]) + len(state["scored_rows"]),
+                     "anomaly_rows": anomaly_rows, "top_entity": top_name, "duration_ms": duration_ms})
+    except Exception as exc:
+        duration_ms = max(1, round((time.perf_counter() - started) * 1000))
+        with engine.begin() as connection:
+            connection.execute(text("""
+                UPDATE app.algorithm_run SET status='failed', error_message=:error,
+                    duration_ms=:duration_ms, completed_at=NOW() WHERE run_id=:run_id
+            """), {"run_id": run_id, "error": str(exc)[:500], "duration_ms": duration_ms})
+        raise AgentRunError(str(exc)[:500], run_id) from exc
+    return {
+        "run_id": run_id, "status": "completed", "duration_ms": duration_ms,
+        "period": {"training": state["recipe"]["training_window"], "scoring": state["recipe"]["scoring_window"], "anchor": "2025-12-29"},
+        "recipe": {
+            "code": state["recipe"]["recipe_code"], "name": state["recipe"]["recipe_name"],
+            "algorithm": state["recipe"]["algorithm_name"], "version": state["recipe"]["version"],
+            "features": state["recipe"]["feature_columns"], "parameters": state["recipe"]["parameters"],
+            "feature_sql": state["recipe"]["feature_sql"], "explanation_rule": state["recipe"]["explanation_rule"],
+        },
+        "assessment": state["assessment"], "ranking": state["ranking"],
+        "timeline": state["timeline"], "deviations": state["deviations"],
+        "reason_distribution": state["reason_distribution"], "brief": state["brief"],
+        "evidence": state["evidence"], "trace": state["trace"],
+    }
+
+
 def capabilities() -> dict[str, Any]:
     return {
-        "phase": "phase-4",
+        "phase": "phase-5",
         "supported_scenes": ["quality", "equipment", "production"],
         "supported_questions": SUPPORTED_QUESTIONS,
         "pipeline": ["retrieve", "plan", "text_to_sql", "validate_sql", "repair_sql", "execute_sql", "build_chart", "summarize"],
         "limits": {"max_rows": 100, "statement_timeout_ms": 5000, "sql_mode": "read_only", "max_sql_repairs": 2},
         "rag": {"channels": ["exact", "pg_trgm", "pgvector"], "fusion": "RRF", "top_k": 10},
         "quality_specialization": ["process_yield", "defect_pareto", "daily_yield_trend", "month_over_month", "management_brief"],
+        "equipment_specialization": ["daily_feature_recipe", "isolation_forest", "anomaly_ranking", "robust_deviation", "diagnosis_brief"],
     }
 
 
@@ -205,4 +255,23 @@ def stage4_evaluation_summary() -> dict[str, Any]:
         "stage": "phase-4", "required_consecutive_successes": 3,
         "consecutive_successes": consecutive, "passed": consecutive >= 3 and all(item["completed"] for item in cases),
         "cases": cases,
+    }
+
+
+def stage5_evaluation_summary() -> dict[str, Any]:
+    with get_engine().connect() as connection:
+        rows = [dict(row) for row in connection.execute(text("""
+            SELECT run_id, status, input_rows, anomaly_rows, top_entity, duration_ms, started_at
+            FROM app.algorithm_run WHERE recipe_code='equipment-daily-iforest-v1'
+            ORDER BY started_at DESC LIMIT 10
+        """)).mappings()]
+    consecutive = 0
+    for row in rows:
+        if row["status"] != "completed":
+            break
+        consecutive += 1
+    return {
+        "stage": "phase-5", "required_consecutive_successes": 3,
+        "consecutive_successes": consecutive, "passed": consecutive >= 3,
+        "latest_runs": rows[:3],
     }

@@ -5,10 +5,12 @@ from app.agent.service import (
     AgentRunError,
     capabilities,
     list_recent_runs,
+    run_equipment_diagnosis,
     run_quality_analysis,
     run_quality_brief,
     stage3_evaluation_summary,
     stage4_evaluation_summary,
+    stage5_evaluation_summary,
 )
 
 
@@ -45,6 +47,19 @@ def create_quality_brief() -> dict[str, object]:
         return run_quality_brief()
     except AgentRunError as exc:
         raise HTTPException(status_code=502, detail={"message": str(exc), "run_id": exc.run_id}) from exc
+
+
+@router.post("/equipment/diagnosis")
+def create_equipment_diagnosis() -> dict[str, object]:
+    try:
+        return run_equipment_diagnosis()
+    except AgentRunError as exc:
+        raise HTTPException(status_code=502, detail={"message": str(exc), "run_id": exc.run_id}) from exc
+
+
+@router.get("/evaluation/stage5")
+def stage5_evaluation() -> dict[str, object]:
+    return stage5_evaluation_summary()
 
 
 @router.post("/runs")

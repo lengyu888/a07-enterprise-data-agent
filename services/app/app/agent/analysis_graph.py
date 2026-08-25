@@ -40,6 +40,8 @@ SUPPORTED_QUESTIONS = [
     "本月缺陷类型 Pareto 分析",
     "最近30天每日良率趋势",
     "对比本月与上月总体良率",
+    "本月各设备报警次数排名",
+    "本月各设备非计划停机次数排名",
 ]
 
 
@@ -307,6 +309,8 @@ metric_column 必须使用指标编码；趋势问题 dimension_column=business_
             "final_output": ("completed_qty", "is_final_process"),
             "plan_attainment": ("completed_qty", "planned_qty", "is_final_process"),
             "defect_count": ("defect_qty",),
+            "alarm_count": ("event_type",),
+            "downtime_count": ("event_type", "is_planned"),
         }[metric_code]
         if not all(token in lower_sql for token in semantic_tokens):
             raise ValueError(f"SQL 未落实指标 {metric_code} 的必要口径字段")

@@ -121,7 +121,7 @@ def retrieve_evidence(question: str, top_k: int = 10) -> dict[str, Any]:
 
     explicit_metric = _explicit_metric_code(question, topic)
     if explicit_metric is None:
-        raise ValueError("当前比赛版仅支持包含良率、不良率、缺陷数量、停机时长、完工产量或计划达成率的分析问题")
+        raise ValueError("当前比赛版仅支持已发布的质量、设备或生产指标分析问题")
     metric_item = next((item for item in items if item["metadata"].get("kind") == "metric" and (explicit_metric is None or item["metadata"].get("metric_code") == explicit_metric)), None)
     if metric_item is None and explicit_metric:
         with get_engine().connect() as connection:

@@ -27,7 +27,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .shell { position: relative; min-height: 100vh; padding: 26px clamp(20px, 4.6vw, 74px) 48px; overflow: hidden; }
 .blueprint { position: fixed; inset: 0; pointer-events: none; opacity: .6; background-image: linear-gradient(rgba(36,87,255,.07) 1px, transparent 1px), linear-gradient(90deg,rgba(36,87,255,.07) 1px,transparent 1px), radial-gradient(circle at 88% 6%,rgba(114,215,255,.42),transparent 23rem), radial-gradient(circle at 4% 68%,rgba(201,255,63,.2),transparent 27rem); background-size: 52px 52px,52px 52px,auto,auto; mask-image: linear-gradient(to bottom,#000 0%,rgba(0,0,0,.82) 72%,transparent 100%); }
-.masthead,.view-nav,.overview-view,.catalog-view,.knowledge-view,.quality-view,.agent-view,.error-banner,.loading-screen { position: relative; z-index: 1; max-width: 1460px; margin-inline: auto; }
+.masthead,.view-nav,.overview-view,.catalog-view,.knowledge-view,.quality-view,.equipment-view,.agent-view,.error-banner,.loading-screen { position: relative; z-index: 1; max-width: 1460px; margin-inline: auto; }
 
 .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 30px; padding: 16px 18px 24px; border: 2px solid var(--ink); border-bottom-width: 5px; background: rgba(255,254,250,.88); box-shadow: var(--shadow); }
 .brand-lockup { display: flex; align-items: center; gap: 26px; }
@@ -41,7 +41,7 @@ h1 em { color: var(--blue); font-style: normal; }
 .phase-stamp strong { padding: 9px 13px; border: 2px solid var(--ink); background: var(--acid); color: var(--ink); box-shadow: 4px 4px 0 var(--ink); font: 800 .86rem ui-monospace,Consolas,monospace; text-transform: uppercase; }
 
 .view-nav { display: flex; align-items: stretch; min-height: 58px; margin-top: 17px; border: 2px solid var(--ink); background: rgba(255,254,250,.92); box-shadow: 5px 5px 0 rgba(36,87,255,.16); }
-.view-nav button { display: flex; align-items: center; gap: 30px; min-width: 175px; padding: 0 18px; border: 0; border-right: 2px solid var(--ink); background: transparent; cursor: pointer; font-weight: 800; }
+.view-nav button { display: flex; align-items: center; gap: 20px; min-width: 145px; padding: 0 16px; border: 0; border-right: 2px solid var(--ink); background: transparent; cursor: pointer; font-weight: 800; }
 .view-nav button:hover { background: #e8edff; }
 .view-nav button span { margin-left: auto; color: var(--muted); font: .65rem ui-monospace,Consolas,monospace; }
 .view-nav button.active { background: var(--blue); color: white; }
@@ -56,7 +56,7 @@ h1 em { color: var(--blue); font-style: normal; }
 .loading-screen { display: grid; place-items: center; align-content: center; gap: 18px; min-height: 55vh; color: var(--blue-dark); font-weight: 700; }
 .loading-screen i { width: 46px; height: 46px; border: 3px solid rgba(36,87,255,.2); border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; }
 
-.overview-view,.catalog-view,.knowledge-view,.quality-view,.agent-view { padding-top: 21px; animation: rise .45s both; }
+.overview-view,.catalog-view,.knowledge-view,.quality-view,.equipment-view,.agent-view { padding-top: 21px; animation: rise .45s both; }
 .hero-grid { display: grid; grid-template-columns: 1.45fr .55fr; gap: 17px; }
 .hero-copy { position: relative; min-height: 400px; padding: clamp(30px,4vw,60px); overflow: hidden; border: 2px solid var(--ink); background: rgba(255,254,250,.93); box-shadow: var(--shadow); }
 .hero-copy::after { content: "DATA"; position: absolute; right: -12px; bottom: -55px; color: rgba(36,87,255,.055); font: 800 12rem Georgia,serif; pointer-events: none; }
@@ -277,6 +277,63 @@ h1 em { color: var(--blue); font-style: normal; }
 .quality-proof article code { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
 .quality-proof article small { color: var(--quality-coral); font: .55rem ui-monospace,Consolas,monospace; }
 
+.equipment-view { --machine-orange: #ff5b24; --machine-yellow: #ffe66b; --machine-cyan: #72d7ff; }
+.equipment-hero { display: grid; grid-template-columns: minmax(0,1fr) 350px; min-height: 410px; border: 2px solid var(--ink); background: var(--paper); box-shadow: var(--shadow); }
+.equipment-intro { padding: clamp(34px,5vw,70px); }
+.equipment-intro h2 { margin: 14px 0 22px; font: 650 clamp(3.5rem,7.3vw,7.5rem)/.84 "Noto Serif CJK SC",STSong,serif; letter-spacing: -.075em; }
+.equipment-intro h2 span { color: var(--machine-orange); text-decoration: underline; text-decoration-color: var(--machine-cyan); text-decoration-thickness: .16em; text-underline-offset: -.08em; }
+.equipment-intro>p:not(.section-code) { max-width: 850px; color: var(--muted); line-height: 1.85; }
+.equipment-run { display: flex; align-items: center; gap: 12px; margin-top: 28px; padding: 14px 18px; border: 2px solid var(--ink); background: var(--machine-orange); color: white; box-shadow: 5px 5px 0 var(--ink); cursor: pointer; font-weight: 900; }
+.equipment-run:hover:not(:disabled) { background: var(--blue); transform: translate(2px,2px); box-shadow: 3px 3px 0 var(--ink); }
+.equipment-run:disabled { cursor: wait; background: var(--blue); }
+.equipment-run b { margin-left: 24px; color: var(--machine-yellow); }
+.machine-poster { display: grid; align-content: space-between; padding: 34px; overflow: hidden; border-left: 2px solid var(--ink); background: var(--machine-yellow); }
+.machine-poster>span { color: var(--blue); font: 700 10rem/.75 Georgia,serif; letter-spacing: -.1em; }
+.machine-poster svg { width: 100%; height: 100px; overflow: visible; }
+.machine-poster polyline { fill: none; stroke: var(--machine-orange); stroke-width: 7; stroke-linecap: square; filter: drop-shadow(4px 5px 0 white); }
+.machine-poster small { padding-top: 18px; border-top: 2px solid var(--ink); font: 900 .65rem/1.6 ui-monospace,Consolas,monospace; letter-spacing: .13em; }
+.equipment-query-strip { display: grid; grid-template-columns: 125px repeat(3,1fr); margin-top: 17px; border: 2px solid var(--ink); background: var(--paper); box-shadow: var(--shadow); }
+.equipment-query-strip>span { display: grid; place-items: center; background: var(--ink); color: var(--machine-yellow); font: 900 .65rem ui-monospace,Consolas,monospace; }
+.equipment-query-strip button { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border: 0; border-right: 2px solid var(--ink); background: transparent; cursor: pointer; font-weight: 800; }
+.equipment-query-strip button:last-child { border-right: 0; }
+.equipment-query-strip button:hover { background: #fff1e9; }
+.equipment-query-strip button b { color: var(--machine-orange); font: 900 .6rem ui-monospace,Consolas,monospace; }
+.equipment-query-strip button i { margin-left: auto; color: var(--blue); font-style: normal; }
+.equipment-loading,.equipment-empty { display: grid; grid-template-columns: 240px 1fr; align-items: center; gap: 48px; min-height: 350px; margin-top: 18px; padding: clamp(32px,6vw,78px); border: 2px solid var(--ink); background: #fff1e9; box-shadow: var(--shadow); }
+.radar-loader { position: relative; width: 180px; height: 180px; border: 2px solid var(--ink); border-radius: 50%; background: repeating-radial-gradient(circle,transparent 0,transparent 27px,rgba(23,33,61,.22) 28px,rgba(23,33,61,.22) 29px),var(--machine-yellow); overflow: hidden; }
+.radar-loader::before,.radar-loader::after { content: ""; position: absolute; background: var(--ink); opacity: .4; }
+.radar-loader::before { left: 50%; width: 1px; height: 100%; }.radar-loader::after { top: 50%; width: 100%; height: 1px; }
+.radar-loader i { position: absolute; inset: 50% 50% auto auto; width: 48%; height: 2px; background: var(--machine-orange); transform-origin: left; animation: radar 1.3s linear infinite; }
+.radar-loader b { position: absolute; top: 31px; right: 42px; width: 12px; height: 12px; border: 2px solid var(--ink); border-radius: 50%; background: var(--blue); }
+.equipment-loading h3,.equipment-empty h3 { margin: 7px 0 12px; font: 700 clamp(1.8rem,4vw,3.7rem) "Noto Serif CJK SC",STSong,serif; }
+.equipment-loading p,.equipment-empty p { color: var(--muted); line-height: 1.7; }
+.machine-index { display: grid; place-content: center; justify-items: center; min-height: 180px; border: 2px solid var(--ink); background: var(--machine-orange); color: white; box-shadow: 7px 7px 0 var(--machine-yellow); }
+.machine-index b { font: 700 5rem Georgia,serif; }.machine-index span { font: 800 .5rem ui-monospace,Consolas,monospace; letter-spacing: .1em; }
+.equipment-alert-band { display: grid; grid-template-columns: 1.2fr repeat(3,.8fr) 1.1fr; margin-top: 18px; border: 2px solid var(--ink); background: var(--paper); box-shadow: var(--shadow); }
+.equipment-alert-band>div { display: grid; align-content: center; min-height: 180px; padding: 22px; border-right: 2px solid var(--ink); }
+.equipment-alert-band>div:last-child { border-right: 0; }
+.equipment-alert-band span { color: var(--muted); font-size: .6rem; font-weight: 900; letter-spacing: .1em; }
+.equipment-alert-band strong { margin: 13px 0 6px; font: 700 clamp(2.1rem,3.8vw,4rem)/1 Georgia,serif; }
+.equipment-alert-band strong small { font-size: .3em; }.equipment-alert-band p { margin: 0; color: var(--muted); font-size: .67rem; }
+.alert-identity { background: var(--machine-orange); color: white; }.alert-identity>span { color: var(--machine-yellow); }.alert-identity>strong { color: white; font-size: 3.3rem; }.alert-identity h3 { margin: 0 0 7px; font: 700 1.35rem "Noto Serif CJK SC",STSong,serif; }
+.model-ticket { background: var(--machine-yellow); }.model-ticket b { margin: 14px 0 8px; color: var(--blue); font: 800 1.2rem ui-monospace,Consolas,monospace; }.model-ticket code { font-size: .62rem; }
+.equipment-main-grid { display: grid; grid-template-columns: .85fr 1.15fr; gap: 18px; margin-top: 18px; }
+.equipment-panel { border: 2px solid var(--ink); background: var(--paper); box-shadow: var(--shadow); }
+.equipment-panel>header,.deviation-section>header { display: flex; align-items: end; justify-content: space-between; gap: 18px; padding: 24px 27px; border-bottom: 2px solid var(--ink); }
+.equipment-panel h3,.deviation-section h3,.reason-card h3 { margin: 4px 0 0; font: 700 clamp(1.5rem,2.7vw,2.5rem) "Noto Serif CJK SC",STSong,serif; }
+.equipment-panel>header>span { padding: 7px 9px; border: 1.5px solid var(--ink); background: var(--machine-yellow); font: 900 .55rem ui-monospace,Consolas,monospace; }
+.fleet-list article { display: grid; grid-template-columns: 30px 1.2fr 1fr 70px; gap: 12px; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+.fleet-list article:last-child { border-bottom: 0; }.fleet-list article.hot { background: #fff1e9; border-left: 8px solid var(--machine-orange); }
+.fleet-list article>b { color: var(--machine-orange); font: 800 .6rem ui-monospace,Consolas,monospace; }.fleet-list article>div { display: grid; gap: 3px; }.fleet-list article>div strong { font-size: .76rem; }.fleet-list article>div span,.fleet-list article small { color: var(--muted); font-size: .55rem; }
+.fleet-list article>i { display: block; height: 9px; border: 1px solid var(--ink); background: #eef1ff; }.fleet-list article>i em { display: block; height: 100%; background: var(--blue); }.fleet-list article.hot>i em { background: var(--machine-orange); }
+.signal-chart { padding: 27px 24px 13px; background: repeating-linear-gradient(to top,transparent 0,transparent 81px,rgba(23,33,61,.09) 82px); }.signal-chart svg { width: 100%; height: 260px; overflow: visible; }.signal-chart line { stroke: rgba(23,33,61,.14); }.signal-chart polyline { fill: none; stroke: var(--blue); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(4px 5px 0 var(--machine-yellow)); }.signal-chart circle { fill: var(--machine-orange); stroke: var(--ink); stroke-width: 2; }.signal-chart>div { display: flex; justify-content: space-between; color: var(--muted); font: .55rem ui-monospace,Consolas,monospace; }.signal-chart>div b { color: var(--machine-orange); }
+.signal-panel>footer { display: grid; grid-template-columns: 1fr 1fr; border-top: 2px solid var(--ink); }.signal-panel>footer span { padding: 17px 22px; border-right: 1px solid var(--ink); color: var(--muted); font-size: .7rem; }.signal-panel>footer span:last-child { border-right: 0; }.signal-panel>footer b { color: var(--blue); }
+.deviation-section { margin-top: 18px; border: 2px solid var(--ink); background: var(--paper); box-shadow: var(--shadow); }.deviation-section>header>p { max-width: 430px; color: var(--muted); font-size: .7rem; }.deviation-grid { display: grid; grid-template-columns: repeat(5,1fr); }.deviation-grid article { min-width: 0; padding: 22px 18px; border-right: 1px solid var(--ink); }.deviation-grid article:last-child { border-right: 0; }.deviation-grid article>span { color: var(--machine-orange); font: 900 .52rem ui-monospace,Consolas,monospace; }.deviation-grid h4 { min-height: 40px; margin: 9px 0 18px; font-family: "Noto Serif CJK SC",STSong,serif; }.deviation-grid article>div { display: grid; gap: 7px; }.deviation-grid article>div b { color: var(--blue); font: 700 2.1rem Georgia,serif; }.deviation-grid article>div i { height: 10px; border: 1px solid var(--ink); }.deviation-grid article>div em { display: block; height: 100%; background: var(--machine-orange); }.deviation-grid article>div small { color: var(--muted); }.deviation-grid footer { display: flex; justify-content: space-between; gap: 5px; margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--line); font-size: .6rem; }.deviation-grid footer strong { color: var(--machine-orange); }
+.equipment-insight-grid { display: grid; grid-template-columns: .75fr 1.25fr; gap: 18px; margin-top: 18px; }.reason-card,.equipment-brief { border: 2px solid var(--ink); background: var(--paper); box-shadow: var(--shadow); }.reason-card>header,.equipment-brief>header { padding: 23px 26px; border-bottom: 2px solid var(--ink); }.reason-card>div { padding: 18px 24px; }.reason-card article { display: grid; grid-template-columns: 110px 1fr 85px; gap: 10px; align-items: center; padding: 10px 0; }.reason-card article span { font-size: .7rem; }.reason-card article i { height: 11px; border: 1px solid var(--ink); }.reason-card article em { display: block; height: 100%; background: var(--machine-cyan); }.reason-card article b { color: var(--blue); text-align: right; font: 700 .7rem ui-monospace,Consolas,monospace; }.reason-card>footer { padding: 15px 24px; border-top: 2px solid var(--ink); background: var(--machine-yellow); font-size: .65rem; }
+.equipment-brief { background: var(--ink); color: white; }.equipment-brief>header { display: flex; justify-content: space-between; align-items: center; border-color: rgba(255,255,255,.3); }.equipment-brief .section-code { color: var(--machine-orange); }.equipment-brief>header span { padding: 6px 8px; background: var(--machine-yellow); color: var(--ink); font: 900 .55rem ui-monospace,Consolas,monospace; }.equipment-brief>h3 { margin: 0; padding: 27px 31px 14px; font: 700 clamp(1.5rem,2.7vw,2.6rem)/1.4 "Noto Serif CJK SC",STSong,serif; }.equipment-brief>p { margin: 0; padding: 0 31px 25px; color: rgba(255,255,255,.74); line-height: 1.7; }.equipment-brief>div { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid rgba(255,255,255,.3); }.equipment-brief article { padding: 22px 26px; border-right: 1px solid rgba(255,255,255,.3); }.equipment-brief article:last-child { border-right: 0; }.equipment-brief article>b { color: var(--machine-yellow); font-size: .65rem; }.equipment-brief ul { display: grid; gap: 8px; padding-left: 18px; color: rgba(255,255,255,.73); font-size: .68rem; line-height: 1.5; }
+.equipment-proof-grid { display: grid; grid-template-columns: 1.2fr .8fr; gap: 18px; margin-top: 18px; }.recipe-proof,.equipment-trace { border: 2px solid var(--ink); background: var(--paper); box-shadow: var(--shadow); }.recipe-proof { padding: 25px 28px; }.recipe-proof h3 { margin: 5px 0 17px; font: 700 1.7rem "Noto Serif CJK SC",STSong,serif; }.recipe-proof>div { display: flex; flex-wrap: wrap; gap: 6px; }.recipe-proof>div span { padding: 6px 8px; border: 1px solid var(--ink); background: #e2f7ff; font: .58rem ui-monospace,Consolas,monospace; }.recipe-proof>p:not(.section-code) { color: var(--muted); font-size: .7rem; line-height: 1.65; }.recipe-proof summary { cursor: pointer; color: var(--blue); font-weight: 800; }.recipe-proof pre { max-height: 260px; padding: 18px; overflow: auto; background: var(--ink); color: white; font-size: .6rem; white-space: pre-wrap; }
+.equipment-trace>p { padding: 22px 24px 10px; }.equipment-trace>div { display: grid; grid-template-columns: 30px 1fr auto; gap: 12px; padding: 13px 22px; border-top: 1px solid var(--line); }.equipment-trace>div>b { color: var(--machine-orange); font: 900 .57rem ui-monospace,Consolas,monospace; }.equipment-trace>div>span { display: grid; gap: 3px; color: var(--muted); font-size: .62rem; }.equipment-trace>div>span strong { color: var(--ink); }.equipment-trace>div small { color: var(--blue); font: .55rem ui-monospace,Consolas,monospace; }.equipment-trace>footer { display: flex; justify-content: space-between; padding: 14px 22px; border-top: 2px solid var(--ink); background: var(--machine-yellow); font-size: .58rem; }
+
 .agent-hero { display: grid; grid-template-columns: minmax(0,1fr) 190px; gap: 18px; align-items: stretch; }
 .agent-hero>div:first-child { padding: clamp(28px,4.5vw,64px); border: 2px solid var(--ink); background: rgba(255,254,250,.94); box-shadow: var(--shadow); }
 .agent-hero h2 { margin: 14px 0 20px; font: 650 clamp(2.8rem,6vw,6.5rem)/.92 "Noto Serif CJK SC",STSong,serif; letter-spacing: -.065em; }
@@ -440,9 +497,10 @@ h1 em { color: var(--blue); font-style: normal; }
 @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes pulse { 50% { transform: scaleY(.55); background: var(--orange); } }
 @keyframes quality-bars { to { transform: scaleY(.45); opacity: .6; } }
+@keyframes radar { to { transform: rotate(360deg); } }
 
 @media (max-width: 980px) {
-  .hero-grid,.knowledge-layout,.relation-section,.evidence-sql-grid,.result-grid,.quality-chart-grid,.quality-proof-grid { grid-template-columns: 1fr; }
+  .hero-grid,.knowledge-layout,.relation-section,.evidence-sql-grid,.result-grid,.quality-chart-grid,.quality-proof-grid,.equipment-main-grid,.equipment-insight-grid,.equipment-proof-grid { grid-template-columns: 1fr; }
   .stat-strip { grid-template-columns: repeat(2,1fr); }
   .topic-grid { grid-template-columns: 1fr; }
   .date-card { min-height: 230px; }
@@ -458,6 +516,12 @@ h1 em { color: var(--blue); font-style: normal; }
   .quality-kpis article:nth-child(2) { border-right: 0; }
   .quality-kpis article { border-bottom: 2px solid var(--ink); }
   .quality-kpis article:nth-last-child(-n+2) { border-bottom: 0; }
+  .equipment-alert-band { grid-template-columns: 1fr 1fr; }
+  .equipment-alert-band>div { border-bottom: 2px solid var(--ink); }
+  .equipment-alert-band>div:nth-child(even) { border-right: 0; }
+  .equipment-alert-band>.model-ticket { grid-column: 1/-1; border-bottom: 0; }
+  .deviation-grid { grid-template-columns: repeat(3,1fr); }
+  .deviation-grid article { border-bottom: 1px solid var(--ink); }
 }
 
 @media (max-width: 720px) {
@@ -528,6 +592,18 @@ h1 em { color: var(--blue); font-style: normal; }
   .brief-columns>div:last-child { border-bottom: 0; }
   .quality-brief-card>footer { align-items: flex-start; flex-direction: column; }
   .quality-proof article { grid-template-columns: 1fr; }
+  .equipment-hero { grid-template-columns: 1fr; }
+  .equipment-intro { padding: 30px 22px; }
+  .equipment-intro h2 { font-size: clamp(3.2rem,15vw,5.2rem); }
+  .machine-poster { grid-template-columns: auto 1fr; align-items: center; min-height: 140px; border-top: 2px solid var(--ink); border-left: 0; padding: 22px; }
+  .machine-poster>span { font-size: 5rem; }.machine-poster svg { height: 70px; }.machine-poster small { grid-column: 1/-1; }
+  .equipment-query-strip { grid-template-columns: 1fr; }.equipment-query-strip>span { min-height: 42px; }.equipment-query-strip button { border-right: 0; border-bottom: 1px solid var(--line-strong); }
+  .equipment-loading,.equipment-empty { grid-template-columns: 1fr; padding: 28px 22px; }.radar-loader { width: 150px; height: 150px; }
+  .equipment-alert-band { grid-template-columns: 1fr; }.equipment-alert-band>div,.equipment-alert-band>div:nth-child(even) { min-height: 135px; border-right: 0; border-bottom: 2px solid var(--ink); }.equipment-alert-band>.model-ticket { grid-column: 1; border-bottom: 0; }
+  .equipment-panel>header,.deviation-section>header { align-items: flex-start; flex-direction: column; }
+  .fleet-list article { grid-template-columns: 25px 1fr 68px; }.fleet-list article>i { grid-column: 2/-1; grid-row: 2; }.fleet-list article small { text-align: right; }
+  .deviation-grid { grid-template-columns: 1fr; }.deviation-grid article { border-right: 0; border-bottom: 1px solid var(--ink); }
+  .equipment-brief>div { grid-template-columns: 1fr; }.equipment-brief article { border-right: 0; border-bottom: 1px solid rgba(255,255,255,.3); }
 }
 
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration: .01ms!important; animation-iteration-count: 1!important; } }

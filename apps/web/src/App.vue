@@ -42,7 +42,22 @@ type QualityBrief = {
   trace: AgentTrace[]
 }
 
-const activeView = ref<'overview' | 'catalog' | 'knowledge' | 'quality' | 'agent'>('overview')
+type EquipmentDiagnosis = {
+  run_id: string; status: string; duration_ms: number
+  period: { training: string; scoring: string; anchor: string }
+  recipe: { code: string; name: string; algorithm: string; version: string; features: string[]; parameters: Record<string, number>; feature_sql: string; explanation_rule: string }
+  assessment: { top_equipment: EquipmentRank; top_anomaly_date: string; top_anomaly_score: number; anomaly_rate_pct: number; status: string }
+  ranking: EquipmentRank[]
+  timeline: Array<{ business_date: string; anomaly_score: number; is_anomaly: boolean; downtime_minutes: number }>
+  deviations: Array<{ feature: string; label: string; current: number; baseline_median: number; robust_deviation: number; change_pct: number | null }>
+  reason_distribution: Array<{ event_reason: string; event_count: number; duration_minutes: number }>
+  brief: { headline: string; summary: string; risks: string[]; actions: string[]; generation_mode: string }
+  evidence: { metric: string; formula: string; tables: string[]; rules: string[]; retrieval: { strategy: string; context_reduction_pct: number }; sources: string[] }
+  trace: AgentTrace[]
+}
+type EquipmentRank = { equipment_id: string; equipment_name: string; equipment_type: string; line_name: string; anomaly_days: number; max_anomaly_score: number; total_downtime_minutes: number; max_single_duration: number; alarm_count: number }
+
+const activeView = ref<'overview' | 'catalog' | 'knowledge' | 'quality' | 'equipment' | 'agent'>('overview')
 const ready = ref<ReadyPayload | null>(null)
 const bootstrap = ref<BootstrapPayload | null>(null)
 const summary = ref<CatalogSummary | null>(null)
@@ -69,6 +84,9 @@ const agentResult = ref<AgentRun | null>(null)
 const qualityBrief = ref<QualityBrief | null>(null)
 const qualityBriefRunning = ref(false)
 const qualityBriefError = ref('')
+const equipmentDiagnosis = ref<EquipmentDiagnosis | null>(null)
+const equipmentRunning = ref(false)
+const equipmentError = ref('')
 const agentExamples = [
   { scene: '质量分析', code: 'QUALITY', question: '分析本月各工序良率，找出良率最低的工序' },
   { scene: '设备停机', code: 'EQUIPMENT', question: '本月各设备非计划停机时长排名' },
@@ -116,7 +134,12 @@ const qualityTrendPoints = computed(() => {
   return values.map((value, index) => `${values.length <= 1 ? 400 : 45 + index * 710 / (values.length - 1)},${220 - 165 * (value - min) / Math.max(max - min, 1)}`).join(' ')
 })
 const qualityParetoMax = computed(() => Math.max(...(qualityBrief.value?.charts.pareto.map((item) => item.defect_count) ?? [1])))
-function columnLabel(column: string) { return ({ process_name: '工序', product_name: '产品', equipment_name: '设备', event_reason: '原因', line_name: '产线', business_date: '日期', business_month: '月份', defect_type: '缺陷类型', yield_rate: '良率', defect_rate: '不良率', defect_count: '缺陷数量', cumulative_share: '累计占比', downtime_minutes: '停机时长', final_output: '完工产量', plan_attainment: '计划达成率', inspected_qty: '检验数量' } as Record<string, string>)[column] || column }
+const equipmentTimelinePoints = computed(() => (equipmentDiagnosis.value?.timeline ?? []).map((item, index, rows) => `${rows.length <= 1 ? 400 : 45 + index * 710 / (rows.length - 1)},${220 - 1.65 * item.anomaly_score}`).join(' '))
+const equipmentDeviationMax = computed(() => Math.max(...(equipmentDiagnosis.value?.deviations.map((item) => Math.abs(item.robust_deviation)) ?? [1])))
+const equipmentReasonMax = computed(() => Math.max(...(equipmentDiagnosis.value?.reason_distribution.map((item) => item.duration_minutes) ?? [1])))
+function equipmentPointX(index: number) { const count = equipmentDiagnosis.value?.timeline.length ?? 1; return count <= 1 ? 400 : 45 + index * 710 / (count - 1) }
+function equipmentPointY(score: number) { return 220 - 1.65 * score }
+function columnLabel(column: string) { return ({ process_name: '工序', product_name: '产品', equipment_name: '设备', event_reason: '原因', line_name: '产线', business_date: '日期', business_month: '月份', defect_type: '缺陷类型', yield_rate: '良率', defect_rate: '不良率', defect_count: '缺陷数量', cumulative_share: '累计占比', alarm_count: '报警次数', downtime_count: '停机次数', downtime_minutes: '停机时长', final_output: '完工产量', plan_attainment: '计划达成率', inspected_qty: '检验数量' } as Record<string, string>)[column] || column }
 function formatCell(value: string | number, column: string) { return typeof value === 'number' ? `${formatNumber(value)}${['yield_rate', 'defect_rate', 'plan_attainment', 'cumulative_share'].includes(column) ? '%' : ''}` : value }
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, options)
@@ -185,6 +208,16 @@ async function generateQualityBrief() {
 function openQualityQuestion(question: string) {
   agentQuestion.value = question; agentResult.value = null; agentError.value = ''; activeView.value = 'agent'
 }
+async function generateEquipmentDiagnosis() {
+  if (equipmentRunning.value) return
+  equipmentRunning.value = true; equipmentError.value = ''
+  try { equipmentDiagnosis.value = await fetchJson<EquipmentDiagnosis>('/api/v1/agent/equipment/diagnosis', { method: 'POST' }) }
+  catch (cause) { equipmentError.value = cause instanceof Error ? cause.message : '设备异常诊断失败' }
+  finally { equipmentRunning.value = false }
+}
+function openEquipmentQuestion(question: string) {
+  agentQuestion.value = question; agentResult.value = null; agentError.value = ''; activeView.value = 'agent'
+}
 onMounted(loadWorkspace)
 </script>
 
@@ -200,7 +233,8 @@ onMounted(loadWorkspace)
       <button :class="{ active: activeView === 'catalog' }" @click="activeView = 'catalog'">数据目录 <span>02</span></button>
       <button :class="{ active: activeView === 'knowledge' }" @click="activeView = 'knowledge'">业务知识 <span>03</span></button>
       <button :class="{ active: activeView === 'quality' }" @click="activeView = 'quality'">质量驾驶舱 <span>04</span></button>
-      <button :class="{ active: activeView === 'agent' }" @click="activeView = 'agent'">智能问析 <span>05</span></button>
+      <button :class="{ active: activeView === 'equipment' }" @click="activeView = 'equipment'">设备诊断 <span>05</span></button>
+      <button :class="{ active: activeView === 'agent' }" @click="activeView = 'agent'">智能问析 <span>06</span></button>
       <div class="system-pill" :class="{ ready: systemReady }"><i></i>{{ systemReady ? 'SYSTEM READY' : 'CONNECTING' }}</div>
     </nav>
     <div v-if="error" class="error-banner">{{ error }} <button @click="loadWorkspace">重试</button></div>
@@ -209,7 +243,7 @@ onMounted(loadWorkspace)
     <template v-else>
       <section v-if="activeView === 'overview'" class="overview-view">
         <div class="hero-grid">
-          <article class="hero-copy"><p class="section-code">PHASE 04 / QUALITY ANALYSIS SPECIALIZATION</p><h2>让 Agent<br />真正<span>解释质量</span></h2><p>从质量指标、缺陷 Pareto、趋势环比到管理层简报，每个结论都回到 PostgreSQL 真实结果和可追溯 EvidenceBundle。</p><button class="primary-action" @click="activeView = 'quality'">打开质量驾驶舱 <b>→</b></button></article>
+          <article class="hero-copy"><p class="section-code">PHASE 05 / EQUIPMENT ANOMALY SPECIALIZATION</p><h2>在停机之前<br />发现<span>行为偏离</span></h2><p>审核 Recipe 将日粒度特征 SQL、Isolation Forest 与稳健偏离解释连成可复现算法链，再由 DeepSeek 形成有边界的设备诊断。</p><button class="primary-action" @click="activeView = 'equipment'">打开设备诊断 <b>→</b></button></article>
           <article class="date-card"><span>DATASET ANCHOR</span><strong>{{ summary?.dataset_max_business_date }}</strong><p>所有“本月 / 最近 30 天”等相对时间均以此业务日期为准。</p></article>
         </div>
         <div class="stat-strip">
@@ -328,10 +362,54 @@ onMounted(loadWorkspace)
         </template>
       </section>
 
+      <section v-if="activeView === 'equipment'" class="equipment-view">
+        <header class="equipment-hero">
+          <div class="equipment-intro">
+            <p class="section-code">PHASE 05 / MACHINE BEHAVIOR DOSSIER</p>
+            <h2>别等停机，<br /><span>先看偏离</span></h2>
+            <p>用 61 天历史设备日作为基线，对 29 天评分窗口进行无监督异常识别。算法说明“哪里不一样”，DeepSeek 帮助组织核查路径，但不替代根因分析。</p>
+            <button class="equipment-run" :disabled="equipmentRunning" @click="generateEquipmentDiagnosis"><span v-if="equipmentRunning" class="button-spinner"></span>{{ equipmentRunning ? '正在执行异常 Recipe' : equipmentDiagnosis ? '重新运行设备诊断' : '运行设备异常诊断' }} <b>↗</b></button>
+          </div>
+          <div class="machine-poster" aria-hidden="true">
+            <span>IF</span><svg viewBox="0 0 280 90"><polyline points="0,45 35,44 48,18 63,72 78,43 130,44 146,36 159,50 176,43 230,44 242,8 254,80 268,44 280,45" /></svg>
+            <small>ISOLATION FOREST<br />DAILY FEATURE RECIPE</small>
+          </div>
+        </header>
+
+        <div class="equipment-query-strip"><span>SQL 下钻</span><button @click="openEquipmentQuestion('本月各设备报警次数排名')"><b>01</b> 报警频次 <i>→</i></button><button @click="openEquipmentQuestion('本月各设备非计划停机次数排名')"><b>02</b> 停机次数 <i>→</i></button><button @click="openEquipmentQuestion('本月各设备非计划停机时长排名')"><b>03</b> 停机时长 <i>→</i></button></div>
+        <div v-if="equipmentError" class="agent-error"><strong>设备诊断未完成</strong><p>{{ equipmentError }}</p><button @click="generateEquipmentDiagnosis">重新运行</button></div>
+        <div v-if="equipmentRunning" class="equipment-loading"><div class="radar-loader"><i></i><b></b><span></span></div><div><p class="section-code">RECIPE IS RUNNING</p><h3>正在训练基线并扫描设备日偏离</h3><p>Feature SQL → StandardScaler → Isolation Forest → Median/IQR Explanation → DeepSeek Brief</p></div></div>
+        <section v-else-if="!equipmentDiagnosis" class="equipment-empty"><div class="machine-index"><b>E08</b><span>KNOWN SIGNAL / HIDDEN FROM MODEL</span></div><div><p class="section-code">AUDITABLE ANOMALY WORKFLOW</p><h3>一次运行，展示从特征到解释的完整算法证据</h3><p>系统不会读取预设答案。E08 的异常模式埋在设备事件数据中，需由固定 Recipe 现场识别。</p></div></section>
+
+        <template v-if="equipmentDiagnosis && !equipmentRunning">
+          <section class="equipment-alert-band">
+            <div class="alert-identity"><span>TOP ANOMALY</span><strong>{{ equipmentDiagnosis.assessment.top_equipment.equipment_id }}</strong><h3>{{ equipmentDiagnosis.assessment.top_equipment.equipment_name }}</h3><p>{{ equipmentDiagnosis.assessment.top_equipment.line_name }}</p></div>
+            <div><span>异常日</span><strong>{{ equipmentDiagnosis.assessment.top_equipment.anomaly_days }}<small>/29</small></strong><p>{{ equipmentDiagnosis.assessment.anomaly_rate_pct }}% 评分窗口</p></div>
+            <div><span>最大单次停机</span><strong>{{ equipmentDiagnosis.assessment.top_equipment.max_single_duration }}<small> min</small></strong><p>{{ equipmentDiagnosis.assessment.top_anomaly_date }}</p></div>
+            <div><span>模型评分峰值</span><strong>{{ equipmentDiagnosis.assessment.top_anomaly_score }}</strong><p>0—100 相对尺度</p></div>
+            <div class="model-ticket"><span>MODEL RECIPE</span><b>{{ equipmentDiagnosis.recipe.algorithm }}</b><code>v{{ equipmentDiagnosis.recipe.version }} · seed {{ equipmentDiagnosis.recipe.parameters.random_state }}</code></div>
+          </section>
+
+          <div class="equipment-main-grid">
+            <section class="equipment-panel fleet-panel"><header><div><p class="section-code">FLEET ANOMALY RANK</p><h3>九台设备扫描</h3></div><span>29 DAYS</span></header><div class="fleet-list"><article v-for="(item, index) in equipmentDiagnosis.ranking" :key="item.equipment_id" :class="{ hot: index === 0 }"><b>{{ String(index + 1).padStart(2, '0') }}</b><div><strong>{{ item.equipment_name }}</strong><span>{{ item.equipment_id }} · {{ item.equipment_type }}</span></div><i><em :style="{ width: `${item.max_anomaly_score}%` }"></em></i><small>{{ item.anomaly_days }} 异常日</small></article></div></section>
+            <section class="equipment-panel signal-panel"><header><div><p class="section-code">ANOMALY SIGNAL / TOP MACHINE</p><h3>{{ equipmentDiagnosis.assessment.top_equipment.equipment_name }} 时间信号</h3></div><span>IF SCORE</span></header><div class="signal-chart"><svg viewBox="0 0 800 260" preserveAspectRatio="none"><line v-for="y in [55, 137, 220]" :key="y" x1="45" :y1="y" x2="755" :y2="y" /><polyline :points="equipmentTimelinePoints" /><g v-for="(item, index) in equipmentDiagnosis.timeline" :key="item.business_date"><circle v-if="item.is_anomaly" :cx="equipmentPointX(index)" :cy="equipmentPointY(item.anomaly_score)" r="6" /></g></svg><div><span>{{ equipmentDiagnosis.timeline[0]?.business_date.slice(5) }}</span><b>异常阈值由训练基线确定</b><span>{{ equipmentDiagnosis.timeline.at(-1)?.business_date.slice(5) }}</span></div></div><footer><span>停机累计 <b>{{ formatNumber(equipmentDiagnosis.assessment.top_equipment.total_downtime_minutes) }} min</b></span><span>报警事件 <b>{{ equipmentDiagnosis.assessment.top_equipment.alarm_count }} 次</b></span></footer></section>
+          </div>
+
+          <section class="deviation-section"><header><div><p class="section-code">ROBUST DEVIATION EXPLANATION</p><h3>它为什么被判为异常</h3></div><p>当前最高异常日相对该设备历史中位数 / IQR，不代表因果根因。</p></header><div class="deviation-grid"><article v-for="(item, index) in equipmentDiagnosis.deviations" :key="item.feature"><span>0{{ index + 1 }} · {{ item.feature }}</span><h4>{{ item.label }}</h4><div><b>{{ item.current }}</b><i><em :style="{ width: `${100 * Math.abs(item.robust_deviation) / equipmentDeviationMax}%` }"></em></i><small>基线 {{ item.baseline_median }}</small></div><footer><strong>{{ item.robust_deviation > 0 ? '+' : '' }}{{ item.robust_deviation }} IQR</strong><span v-if="item.change_pct !== null">{{ item.change_pct > 0 ? '+' : '' }}{{ item.change_pct }}%</span><span v-else>基线为 0</span></footer></article></div></section>
+
+          <div class="equipment-insight-grid">
+            <section class="reason-card"><header><p class="section-code">EVENT REASON / REVIEW CLUES</p><h3>事件原因线索</h3></header><div><article v-for="item in equipmentDiagnosis.reason_distribution" :key="item.event_reason"><span>{{ item.event_reason }}</span><i><em :style="{ width: `${100 * item.duration_minutes / equipmentReasonMax}%` }"></em></i><b>{{ formatNumber(item.duration_minutes) }} min</b></article></div><footer>原因分布仅用于安排核查，不作为模型根因结论。</footer></section>
+            <section class="equipment-brief"><header><p class="section-code">DEEPSEEK RELIABILITY BRIEF</p><span>{{ equipmentDiagnosis.brief.generation_mode.toUpperCase() }}</span></header><h3>{{ equipmentDiagnosis.brief.headline }}</h3><p>{{ equipmentDiagnosis.brief.summary }}</p><div><article><b>风险观察</b><ul><li v-for="risk in equipmentDiagnosis.brief.risks" :key="risk">{{ risk }}</li></ul></article><article><b>建议动作</b><ul><li v-for="action in equipmentDiagnosis.brief.actions" :key="action">{{ action }}</li></ul></article></div></section>
+          </div>
+
+          <section class="equipment-proof-grid"><article class="recipe-proof"><p class="section-code">RECIPE CONTRACT</p><h3>{{ equipmentDiagnosis.recipe.name }}</h3><div><span v-for="feature in equipmentDiagnosis.recipe.features" :key="feature">{{ feature }}</span></div><p>{{ equipmentDiagnosis.recipe.explanation_rule }}</p><details><summary>查看审核 Feature SQL</summary><pre>{{ equipmentDiagnosis.recipe.feature_sql }}</pre></details></article><article class="equipment-trace"><p class="section-code">LANGGRAPH / 5 NODES</p><div v-for="(step, index) in equipmentDiagnosis.trace" :key="step.node_name"><b>0{{ index + 1 }}</b><span><strong>{{ step.display_name }}</strong>{{ step.summary }}</span><small>{{ formatDuration(step.duration_ms) }}</small></div><footer><code>{{ equipmentDiagnosis.run_id }}</code><span>{{ formatDuration(equipmentDiagnosis.duration_ms) }}</span></footer></article></section>
+        </template>
+      </section>
+
       <section v-if="activeView === 'agent'" class="agent-view">
         <header class="agent-hero">
           <div>
-            <p class="section-code">PHASE 04 / HYBRID RAG + QUALITY SPECIALIZATION</p>
+            <p class="section-code">PHASE 05 / RAG + SQL + ALGORITHM RECIPES</p>
             <h2>一句话，<span>走完分析链路</span></h2>
             <p>不是聊天演示：问题经过业务理解、证据检索、DeepSeek Text-to-SQL、安全校验与只读执行，最后生成图表和可追溯结论。</p>
           </div>

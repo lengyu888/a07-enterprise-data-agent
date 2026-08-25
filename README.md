@@ -6,7 +6,7 @@
 
 ## 当前阶段
 
-阶段 4：质量分析专项（Docker 本地测试候选版，等待用户确认）。
+阶段 5：设备异常专项（Docker 本地测试候选版，等待用户确认）。
 
 - Vue 3 Web 工作台；
 - FastAPI 模块化单体；
@@ -29,11 +29,15 @@
 - 质量、设备、生产三个场景的基础通用 Text-to-SQL；
 - 质量专项的工序良率、缺陷 Pareto、30 天每日趋势与月度环比；
 - 3 组 EvidenceBundle + 4 组只读 SQL + DeepSeek 的一键管理层质量简报；
+- 审核 Recipe、设备日粒度 Feature SQL 与 SQLGlot 表白名单；
+- 本地 Isolation Forest 设备异常检测，固定算法参数与随机种子；
+- 历史中位数/IQR 特征偏离解释、九台设备排名和异常时间信号；
+- 设备事件原因核查线索与 DeepSeek 可靠性诊断简报；
 - SQL 校验/执行失败后最多两次 DeepSeek 修复回路；
 - 柱状图、折线图、动态结果列与前端 RAG 检索台账；
 - Docker Compose 本地构建、健康检查与验收脚本。
 
-当前支持 18 个问析问题。质量场景已完成专项扩展；设备异常算法和生产预测将在后续阶段实现。
+当前支持 20 个问析问题。质量和设备场景已完成专项扩展；生产预测将在下一阶段实现。
 
 ## 本地启动
 
@@ -60,7 +64,7 @@
 5. 执行当前阶段冒烟测试。
 
    ```powershell
-   powershell -ExecutionPolicy Bypass -File .\scripts\test-stage4.ps1
+   powershell -ExecutionPolicy Bypass -File .\scripts\test-stage5.ps1
    ```
 
 6. 停止服务。
@@ -88,13 +92,15 @@ docker compose -f compose.yml -f compose.deepseek.yml up --build -d
 
 `/api/v1/system/deepseek/probe` 可验证用户提供的 OpenAI SDK 兼容调用方式。未配置 Secret 不影响基础三容器验收。不要运行会展开环境变量值的配置命令并把输出粘贴到公开日志。
 
-## 阶段 4 Agent / RAG API
+## 阶段 5 Agent / RAG / Algorithm API
 
 - `GET /api/v1/agent/capabilities`：MVP 场景、问题与八节点链路边界；
 - `POST /api/v1/agent/runs`：执行真实质量问析；
 - `GET /api/v1/agent/runs`：最近运行及审计状态。
 - `POST /api/v1/agent/quality/brief`：运行质量简报 LangGraph；
 - `GET /api/v1/agent/evaluation/stage4`：质量场景连续成功门槛；
+- `POST /api/v1/agent/equipment/diagnosis`：运行设备异常 Recipe 与五节点 LangGraph；
+- `GET /api/v1/agent/evaluation/stage5`：设备算法连续成功门槛；
 - `GET /api/v1/rag/status`：向量模型、索引类型与证据数量；
 - `POST /api/v1/rag/search`：返回三路融合后的 EvidenceBundle；
 - `POST /api/v1/rag/reindex`：增量重建知识索引。
