@@ -31,13 +31,14 @@ def main() -> None:
         browser = playwright.chromium.launch(channel="msedge", headless=True)
 
         errors: list[str] = []
-        desktop = browser.new_page(viewport={"width": 1440, "height": 1000})
+        desktop = browser.new_page(viewport={"width": 1440, "height": 900})
         desktop.on(
             "console",
             lambda message: errors.append(message.text) if message.type == "error" else None,
         )
         desktop.goto(BASE_URL, wait_until="networkidle")
-        expect(desktop.get_by_role("heading", name="把计划差距 变成行动线索")).to_be_visible()
+        expect(desktop.get_by_role("heading", name="让数据资产 先被看懂")).to_be_visible()
+        expect(desktop.locator(".overview-module-rail button")).to_have_count(7)
         body_font = desktop.locator("body").evaluate(
             "element => getComputedStyle(element).fontFamily"
         )
@@ -57,7 +58,9 @@ def main() -> None:
         assert no_horizontal_overflow(desktop)
         desktop.wait_for_timeout(500)
         desktop.screenshot(
-            path=str(ARTIFACTS / "stage6-polish-overview-desktop.png"), full_page=True
+            path=str(ARTIFACTS / "stage6-polish-overview-desktop.png"),
+            full_page=True,
+            animations="disabled",
         )
 
         pages = [
@@ -78,27 +81,6 @@ def main() -> None:
         )
         assert not errors, errors
 
-        mobile_errors: list[str] = []
-        mobile = browser.new_page(viewport={"width": 390, "height": 844})
-        mobile.on(
-            "console",
-            lambda message: mobile_errors.append(message.text)
-            if message.type == "error"
-            else None,
-        )
-        mobile.goto(BASE_URL, wait_until="networkidle")
-        mobile_hero_size = float(
-            mobile.locator(".hero-copy h2")
-            .evaluate("element => getComputedStyle(element).fontSize")
-            .removesuffix("px")
-        )
-        assert mobile_hero_size <= 52
-        assert no_horizontal_overflow(mobile)
-        mobile.wait_for_timeout(500)
-        mobile.screenshot(
-            path=str(ARTIFACTS / "stage6-polish-overview-mobile.png"), full_page=True
-        )
-        assert not mobile_errors, mobile_errors
         browser.close()
 
 

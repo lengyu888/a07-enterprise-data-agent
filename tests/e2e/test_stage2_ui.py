@@ -19,7 +19,7 @@ def main() -> None:
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="msedge", headless=True)
-        page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        page = browser.new_page(viewport={"width": 1440, "height": 900})
         page.on(
             "console",
             lambda message: console_errors.append(message.text)
@@ -47,14 +47,6 @@ def main() -> None:
         page.wait_for_timeout(900)
         page.screenshot(path=ARTIFACT_DIR / "stage2-agent-result-desktop.png", full_page=True)
 
-        mobile = browser.new_page(viewport={"width": 390, "height": 844})
-        mobile.goto(BASE_URL)
-        mobile.wait_for_load_state("networkidle")
-        mobile.locator(".view-nav button").nth(6).click()
-        assert mobile.get_by_label("分析问题").is_visible()
-        assert mobile.get_by_role("button", name="启动智能问析 →").is_visible()
-        mobile.wait_for_timeout(550)
-        mobile.screenshot(path=ARTIFACT_DIR / "stage2-agent-mobile.png", full_page=True)
         browser.close()
 
     assert not console_errors, f"Browser console errors: {console_errors}"

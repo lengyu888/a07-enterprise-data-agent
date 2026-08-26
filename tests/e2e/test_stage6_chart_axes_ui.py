@@ -108,7 +108,7 @@ def main() -> None:
     responses = [agent_run("bar"), agent_run("line")]
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="msedge", headless=True)
-        page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        page = browser.new_page(viewport={"width": 1440, "height": 900})
         errors: list[str] = []
         page.on(
             "console",
@@ -118,6 +118,22 @@ def main() -> None:
         def fulfill_agent_run(route) -> None:
             route.fulfill(status=200, json=deepcopy(responses.pop(0)))
 
+        page.route(
+            "**/api/v1/system/deepseek/config",
+            lambda route: route.fulfill(
+                status=200,
+                json={
+                    "configured": True,
+                    "status": "configured",
+                    "source": "runtime",
+                    "model": "deepseek-v4-pro",
+                    "base_url": "https://api.deepseek.com",
+                    "reasoning_effort": "high",
+                    "runtime_only": True,
+                    "can_clear": True,
+                },
+            ),
+        )
         page.route("**/api/v1/agent/runs", fulfill_agent_run)
         page.goto(BASE_URL, wait_until="networkidle")
         page.get_by_role("button", name="智能问析 07").click()

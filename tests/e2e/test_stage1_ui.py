@@ -19,7 +19,7 @@ def main() -> None:
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="msedge", headless=True)
-        page = browser.new_page(viewport={"width": 1440, "height": 1050})
+        page = browser.new_page(viewport={"width": 1440, "height": 900})
         page.on(
             "console",
             lambda message: console_errors.append(message.text)
@@ -56,14 +56,6 @@ def main() -> None:
         page.wait_for_timeout(550)
         page.screenshot(path=ARTIFACT_DIR / "stage1-knowledge-desktop.png", full_page=True)
 
-        mobile = browser.new_page(viewport={"width": 390, "height": 844})
-        mobile.goto(BASE_URL)
-        mobile.wait_for_load_state("networkidle")
-        assert mobile.get_by_text("118,009", exact=True).is_visible()
-        mobile.locator(".view-nav button").nth(1).click()
-        assert mobile.get_by_role("heading", name="数据资源目录").is_visible()
-        mobile.wait_for_timeout(550)
-        mobile.screenshot(path=ARTIFACT_DIR / "stage1-catalog-mobile.png", full_page=True)
         browser.close()
 
     assert not console_errors, f"Browser console errors: {console_errors}"

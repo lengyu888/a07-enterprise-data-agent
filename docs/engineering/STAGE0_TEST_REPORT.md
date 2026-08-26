@@ -8,7 +8,7 @@
 | 三容器启动 | 通过 |
 | PowerShell 冒烟测试 | 通过 |
 | Playwright 桌面端 | 通过 |
-| Playwright 移动端 | 通过 |
+| Playwright 桌面端 | 通过 |
 | 浏览器控制台错误 | 0 |
 | npm audit | 0 个已知漏洞 |
 | DeepSeek 实际请求 | 通过（前端运行时配置，`deepseek-v4-pro`） |
@@ -22,7 +22,7 @@
 - `/api/v1/system/bootstrap` 返回 `phase-0`；
 - Web 首页可访问并正确显示实时依赖状态；
 - “重新检测”交互有效；
-- 1440×1000 桌面视口和 390×844 移动视口均通过；
+- 1440×900 唯一推荐桌面视口通过；移动业务页面已在当前版本移除；
 - 前端生产构建通过 TypeScript 检查与 Vite 构建；
 - Vite 已升级到安全公告修复版本。
 - `/api/v1/system/deepseek/probe` 返回 `ready`，DeepSeek 实际请求通过。

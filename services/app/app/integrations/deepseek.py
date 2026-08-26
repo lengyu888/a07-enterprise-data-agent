@@ -26,6 +26,8 @@ class DeepSeekGateway:
         self._client = OpenAI(
             api_key=settings.resolved_deepseek_api_key,
             base_url=settings.deepseek_base_url,
+            timeout=150.0,
+            max_retries=1,
         )
 
     def probe(self) -> DeepSeekProbeResult:

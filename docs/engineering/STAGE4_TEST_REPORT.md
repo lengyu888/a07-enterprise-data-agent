@@ -27,8 +27,8 @@
 | 一键质量简报 | 3 组 RAG + 4 组只读 SQL + 4 个 LangGraph 节点 |
 | 质量简报模式 | DeepSeek 结构化输出 |
 | 连续成功门槛 | 3/3，`passed=true` |
-| Playwright 桌面/移动端 | 通过 |
-| 移动端横向溢出 | 无 |
+| Playwright 桌面端 | 通过 |
+| 桌面端横向溢出 | 无 |
 | 浏览器控制台错误 | 0 |
 
 ## 3. 代表性真实结果
@@ -69,7 +69,6 @@ python .\tests\e2e\test_stage4_quality_ui.py
 截图：
 
 - `artifacts/stage4-quality-desktop.png`
-- `artifacts/stage4-quality-mobile.png`
 
 ## 5. 建议用户验收动作
 

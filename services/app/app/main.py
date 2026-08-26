@@ -113,7 +113,7 @@ def bootstrap() -> dict[str, object]:
         "phase": read_project_stage(),
         "architecture": ["Vue 3", "FastAPI", "PostgreSQL + pgvector"],
         "core_innovation": ["DeepSeek", "LangGraph", "RAG", "Text-to-SQL"],
-        "next_milestone": "真实演示闭环与答辩材料",
+        "next_milestone": "比赛系统稳定性收口",
     }
 
 

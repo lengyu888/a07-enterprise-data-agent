@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 LOCAL_TEST_PACKAGES = ROOT / ".tools" / "python"
-if LOCAL_TEST_PACKAGES.is_dir():
+LOCAL_GREENLET = LOCAL_TEST_PACKAGES / "greenlet" / (
+    f"_greenlet.cp{sys.version_info.major}{sys.version_info.minor}-win_amd64.pyd"
+)
+if LOCAL_TEST_PACKAGES.is_dir() and LOCAL_GREENLET.is_file():
     sys.path.insert(0, str(LOCAL_TEST_PACKAGES))
 
 from playwright.sync_api import expect, sync_playwright  # noqa: E402
@@ -47,24 +49,10 @@ def main() -> None:
     ARTIFACTS.mkdir(exist_ok=True)
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="msedge", headless=True)
-        desktop = browser.new_page(viewport={"width": 1440, "height": 1000}, device_scale_factor=1)
-        payload = run_quality_page(desktop, "stage4-quality-desktop.png")
+        desktop = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        run_quality_page(desktop, "stage4-quality-desktop.png")
         desktop.get_by_role("button", name="01 缺陷 Pareto →").click()
         expect(desktop.get_by_label("分析问题")).to_have_value("本月缺陷类型 Pareto 分析")
-
-        mobile = browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=1)
-        mobile.route("**/api/v1/agent/quality/brief", lambda route: route.fulfill(
-            status=200, content_type="application/json; charset=utf-8", body=json.dumps(payload, ensure_ascii=False)
-        ))
-        mobile_errors: list[str] = []
-        mobile.on("console", lambda message: mobile_errors.append(message.text) if message.type == "error" else None)
-        mobile.goto(BASE_URL, wait_until="networkidle")
-        mobile.locator(".view-nav button").nth(3).click()
-        mobile.get_by_role("button", name="生成本月质量简报 ↗").click()
-        expect(mobile.locator(".quality-kpis")).to_be_visible()
-        assert mobile.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
-        mobile.screenshot(path=str(ARTIFACTS / "stage4-quality-mobile.png"), full_page=True)
-        assert not mobile_errors, mobile_errors
         browser.close()
 
 

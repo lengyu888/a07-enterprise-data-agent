@@ -19,7 +19,7 @@ def main() -> None:
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="msedge", headless=True)
-        page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        page = browser.new_page(viewport={"width": 1440, "height": 900})
         page.on(
             "console",
             lambda message: console_errors.append(message.text)
@@ -31,7 +31,7 @@ def main() -> None:
         page.wait_for_load_state("networkidle")
         page.screenshot(path=ARTIFACT_DIR / "stage0-desktop.png", full_page=True)
 
-        assert page.title() == "A07 · 智能问析控制台"
+        assert page.title() == "A07 · 企业智能问析桌面工作台"
         assert "企业数据底座" in page.locator("h1").inner_text()
         assert page.get_by_text("本地工程基座已就绪").is_visible()
         assert page.get_by_text("PostgreSQL / pgvector").is_visible()
@@ -40,12 +40,6 @@ def main() -> None:
         page.get_by_role("button", name="重新检测").click()
         page.wait_for_load_state("networkidle")
         assert page.get_by_text("本地工程基座已就绪").is_visible()
-
-        mobile = browser.new_page(viewport={"width": 390, "height": 844})
-        mobile.goto(BASE_URL)
-        mobile.wait_for_load_state("networkidle")
-        mobile.screenshot(path=ARTIFACT_DIR / "stage0-mobile.png", full_page=True)
-        assert mobile.get_by_text("本地工程基座已就绪").is_visible()
 
         browser.close()
 

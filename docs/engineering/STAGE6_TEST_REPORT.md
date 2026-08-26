@@ -19,7 +19,7 @@
 - SQLGlot 单条查询、表白名单、EXPLAIN、只读事务与超时控制继续生效；
 - 新增 LogisticRegression、DecisionTree、RandomForest、KMeans 四个 Recipe，并复用 LinearRegression、IsolationForest，形成六算法能力集；
 - 新增六算法统一验收接口，返回数据切分、样本量、模型指标、参数边界；
-- 新增生产趋势页面、算法验收台、桌面端与移动端交互；
+- 新增生产趋势页面、算法验收台与桌面端交互；
 - 生成式柱状图、折线图、Pareto 图以及三类场景趋势图统一补充横轴、纵轴、刻度和单位；
 - 提高证据、规则、SQL、执行轨迹等小字号信息的可读性，并为英文标签和代码分别采用清晰字体栈；
 - 保持比赛版边界：不引入 Kubernetes、多租户治理或完整 MLOps，不提供大模型任意代码执行。
@@ -61,11 +61,11 @@
 | `/api/health`、`/api/ready`、capabilities | 通过 |
 | 六算法真实执行 | 6/6 通过，约 2.8 秒 |
 | 生产趋势固定简报替身连续运行 | 3/3 通过，业务数据不外传 |
-| `test_stage6_polish_ui.py` | 桌面/移动通过 |
-| `test_stage6_production_ui.py` | 生产页、六算法、桌面/移动通过 |
+| `test_stage6_polish_ui.py` | 桌面端通过 |
+| `test_stage6_production_ui.py` | 生产页、六算法、桌面端通过 |
 | `test_stage6_chart_axes_ui.py` | 生成式柱状图/折线图坐标轴、单位、刻度及关键信息字号通过 |
-| `test_stage6_model_settings_ui.py` | Pro/Flash 选择、运行时 Key、留空复用、响应脱敏、清除和移动端通过 |
-| 390 × 844 横向溢出检查 | 通过 |
+| `test_stage6_model_settings_ui.py` | Pro/Flash 选择、运行时 Key、留空复用、响应脱敏和清除通过 |
+| `test_desktop_only_ui.py` | 唯一推荐桌面基准 1440×900 与小屏访问门禁通过 |
 | 浏览器 Console Error | 0 |
 
 自动验收没有把聚合生产数据发送给外部模型：生产 LangGraph 使用固定本地简报替身验证确定性节点。正式页面仍保留真实 DeepSeek 通道，由用户在“模型配置 08”填写运行时 Key 后手动确认。

@@ -46,7 +46,7 @@ def main() -> None:
     state = {"configured": False, "model": "deepseek-v4-pro", "put_count": 0}
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="msedge", headless=True)
-        desktop = browser.new_page(viewport={"width": 1440, "height": 1000})
+        desktop = browser.new_page(viewport={"width": 1440, "height": 900})
         errors: list[str] = []
         desktop.on(
             "console",
@@ -100,16 +100,6 @@ def main() -> None:
         desktop.get_by_role("button", name="清除页面配置").click()
         expect(desktop.locator(".settings-hero aside strong")).to_have_text("SETUP")
         expect(desktop.get_by_text("页面临时 Key 已安全清除。")).to_be_visible()
-
-        mobile = browser.new_page(viewport={"width": 390, "height": 844})
-        mobile.route("**/api/v1/system/deepseek/config", handle_config)
-        mobile.goto(BASE_URL, wait_until="networkidle")
-        mobile.locator(".view-nav button").nth(7).click()
-        expect(mobile.locator(".model-settings-view")).to_be_visible()
-        assert no_horizontal_overflow(mobile)
-        mobile.screenshot(
-            path=str(ARTIFACTS / "stage6-model-settings-mobile.png"), full_page=True
-        )
 
         assert not errors, errors
         browser.close()

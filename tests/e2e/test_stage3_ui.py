@@ -18,7 +18,7 @@ def main() -> None:
     console_errors: list[str] = []
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="msedge", headless=True)
-        page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        page = browser.new_page(viewport={"width": 1440, "height": 900})
         page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
         page.goto(BASE_URL)
         page.wait_for_load_state("networkidle")
@@ -38,13 +38,6 @@ def main() -> None:
         page.wait_for_timeout(700)
         page.screenshot(path=ARTIFACT_DIR / "stage3-rag-agent-desktop.png", full_page=True)
 
-        mobile = browser.new_page(viewport={"width": 390, "height": 844})
-        mobile.goto(BASE_URL)
-        mobile.wait_for_load_state("networkidle")
-        mobile.locator(".view-nav button").nth(6).click()
-        mobile.wait_for_timeout(550)
-        assert mobile.locator(".example-switcher button").count() == 3
-        mobile.screenshot(path=ARTIFACT_DIR / "stage3-rag-agent-mobile.png", full_page=True)
         browser.close()
     assert not console_errors, f"Browser console errors: {console_errors}"
     print("Stage 3 browser test passed")

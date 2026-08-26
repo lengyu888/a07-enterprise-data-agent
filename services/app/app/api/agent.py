@@ -25,6 +25,14 @@ class AgentQuestion(BaseModel):
     question: str = Field(min_length=4, max_length=300)
 
 
+def _agent_error_status(exc: AgentRunError) -> int:
+    if exc.run_id == "not-created":
+        return 412
+    if exc.unsupported:
+        return 422
+    return 502
+
+
 @router.get("/capabilities")
 def get_capabilities() -> dict[str, object]:
     return capabilities()
@@ -50,7 +58,7 @@ def create_quality_brief() -> dict[str, object]:
     try:
         return run_quality_brief()
     except AgentRunError as exc:
-        raise HTTPException(status_code=502, detail={"message": str(exc), "run_id": exc.run_id}) from exc
+        raise HTTPException(status_code=_agent_error_status(exc), detail={"message": str(exc), "run_id": exc.run_id}) from exc
 
 
 @router.post("/equipment/diagnosis")
@@ -58,7 +66,7 @@ def create_equipment_diagnosis() -> dict[str, object]:
     try:
         return run_equipment_diagnosis()
     except AgentRunError as exc:
-        raise HTTPException(status_code=502, detail={"message": str(exc), "run_id": exc.run_id}) from exc
+        raise HTTPException(status_code=_agent_error_status(exc), detail={"message": str(exc), "run_id": exc.run_id}) from exc
 
 
 @router.get("/evaluation/stage5")
@@ -71,7 +79,7 @@ def create_production_trend() -> dict[str, object]:
     try:
         return run_production_trend()
     except AgentRunError as exc:
-        raise HTTPException(status_code=502, detail={"message": str(exc), "run_id": exc.run_id}) from exc
+        raise HTTPException(status_code=_agent_error_status(exc), detail={"message": str(exc), "run_id": exc.run_id}) from exc
 
 
 @router.get("/algorithms")
@@ -98,6 +106,6 @@ def create_run(payload: AgentQuestion) -> dict[str, object]:
         return run_quality_analysis(payload.question)
     except AgentRunError as exc:
         raise HTTPException(
-            status_code=422 if exc.unsupported else 502,
+            status_code=_agent_error_status(exc),
             detail={"message": str(exc), "run_id": exc.run_id},
         ) from exc

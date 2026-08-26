@@ -303,7 +303,7 @@ h1 em { color: var(--blue); font-style: normal; }
 .radar-loader { position: relative; width: 180px; height: 180px; border: 2px solid var(--ink); border-radius: 50%; background: repeating-radial-gradient(circle,transparent 0,transparent 27px,rgba(23,33,61,.22) 28px,rgba(23,33,61,.22) 29px),var(--machine-yellow); overflow: hidden; }
 .radar-loader::before,.radar-loader::after { content: ""; position: absolute; background: var(--ink); opacity: .4; }
 .radar-loader::before { left: 50%; width: 1px; height: 100%; }.radar-loader::after { top: 50%; width: 100%; height: 1px; }
-.radar-loader i { position: absolute; inset: 50% 50% auto auto; width: 48%; height: 2px; background: var(--machine-orange); transform-origin: left; animation: radar 1.3s linear infinite; }
+.radar-loader i { position: absolute; top: calc(50% - 1px); left: 50%; width: calc(50% - 2px); height: 2px; background: var(--machine-orange); transform-origin: 0 50%; animation: radar 1.3s linear infinite; }
 .radar-loader b { position: absolute; top: 31px; right: 42px; width: 12px; height: 12px; border: 2px solid var(--ink); border-radius: 50%; background: var(--blue); }
 .equipment-loading h3,.equipment-empty h3 { margin: 7px 0 12px; font: 700 clamp(1.8rem,4vw,3.7rem) "Noto Serif CJK SC",STSong,serif; }
 .equipment-loading p,.equipment-empty p { color: var(--muted); line-height: 1.7; }

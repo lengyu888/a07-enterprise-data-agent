@@ -59,8 +59,24 @@ def main() -> None:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="msedge", headless=True)
         errors: list[str] = []
-        desktop = browser.new_page(viewport={"width": 1440, "height": 1000})
+        desktop = browser.new_page(viewport={"width": 1440, "height": 900})
         desktop.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
+        desktop.route(
+            "**/api/v1/system/deepseek/config",
+            lambda route: route.fulfill(
+                status=200,
+                json={
+                    "configured": True,
+                    "status": "configured",
+                    "source": "runtime",
+                    "model": "deepseek-v4-pro",
+                    "base_url": "https://api.deepseek.com",
+                    "reasoning_effort": "high",
+                    "runtime_only": True,
+                    "can_clear": True,
+                },
+            ),
+        )
         desktop.route("**/api/v1/agent/production/trend", lambda route: route.fulfill(
             status=200, content_type="application/json; charset=utf-8", body=json.dumps(payload, ensure_ascii=False)
         ))
@@ -92,25 +108,6 @@ def main() -> None:
         assert desktop.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
         assert not errors, errors
 
-        mobile_errors: list[str] = []
-        mobile = browser.new_page(viewport={"width": 390, "height": 844})
-        mobile.on("console", lambda message: mobile_errors.append(message.text) if message.type == "error" else None)
-        mobile.route("**/api/v1/agent/production/trend", lambda route: route.fulfill(
-            status=200, content_type="application/json; charset=utf-8", body=json.dumps(payload, ensure_ascii=False)
-        ))
-        mobile.route("**/api/v1/agent/algorithms/evaluate", lambda route: route.fulfill(
-            status=200, content_type="application/json; charset=utf-8", body=json.dumps(suite_payload, ensure_ascii=False)
-        ))
-        mobile.goto(BASE_URL, wait_until="networkidle")
-        mobile.locator(".view-nav button").nth(5).click()
-        mobile.locator(".production-run").click()
-        mobile.locator(".algorithm-lab>header button").click()
-        expect(mobile.locator(".production-kpis")).to_be_visible()
-        expect(mobile.locator(".algorithm-grid article")).to_have_count(6)
-        expect(mobile.locator(".production-chart .chart-y-title")).to_be_visible()
-        assert mobile.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
-        mobile.screenshot(path=str(ARTIFACTS / "stage6-production-mobile.png"), full_page=True)
-        assert not mobile_errors, mobile_errors
         browser.close()
 
 

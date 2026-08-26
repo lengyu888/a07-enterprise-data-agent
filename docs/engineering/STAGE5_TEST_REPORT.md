@@ -36,8 +36,8 @@
 | 连续算法运行 | 3/3 completed，`passed=true` |
 | 新增 RAG 指标 | `alarm_count`、`downtime_count` 均正确召回 |
 | 报警次数 Text-to-SQL | 9 行，DeepSeek，0 次修复 |
-| Playwright 桌面/移动端 | 通过 |
-| 移动端横向溢出 | 无 |
+| Playwright 桌面端 | 通过 |
+| 桌面端横向溢出 | 无 |
 | 浏览器控制台错误 | 0 |
 
 ## 3. Recipe 契约
@@ -79,7 +79,6 @@ python .\tests\e2e\test_stage5_equipment_ui.py
 截图：
 
 - `artifacts/stage5-equipment-desktop.png`
-- `artifacts/stage5-equipment-mobile.png`
 
 ## 5. 建议用户验收动作
 

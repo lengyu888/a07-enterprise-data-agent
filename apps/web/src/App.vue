@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 
 type ReadyPayload = { status: string; dependencies: { database: string; deepseek: string } }
 type BootstrapPayload = { phase: string; next_milestone: string }
@@ -80,7 +80,20 @@ type AlgorithmSuite = {
   guardrail: string
 }
 
-const activeView = ref<'overview' | 'catalog' | 'knowledge' | 'quality' | 'equipment' | 'production' | 'agent' | 'settings'>('overview')
+type ViewName = 'overview' | 'catalog' | 'knowledge' | 'quality' | 'equipment' | 'production' | 'agent' | 'settings'
+type OverviewSlide = {
+  id: Exclude<ViewName, 'overview'>
+  module: string
+  code: string
+  title: string
+  highlight: string
+  description: string
+  action: string
+  backdrop: string
+  accent: string
+}
+
+const activeView = ref<ViewName>('overview')
 const ready = ref<ReadyPayload | null>(null)
 const bootstrap = ref<BootstrapPayload | null>(null)
 const deepseekConfig = ref<DeepSeekConfigStatus | null>(null)
@@ -105,6 +118,8 @@ const refreshing = ref(false)
 const error = ref('')
 const metricEditorOpen = ref(false)
 const editingMetric = ref(false)
+const metricSaving = ref(false)
+const metricError = ref('')
 const dimensionText = ref('')
 const mappedTableText = ref('')
 const agentQuestion = ref('分析本月各工序良率，找出良率最低的工序')
@@ -127,6 +142,47 @@ const deepseekModels = [
   { id: 'deepseek-v4-pro', name: 'V4 Pro', tag: 'DEEP REASONING', description: '复杂 Text-to-SQL、分析规划与管理简报' },
   { id: 'deepseek-v4-flash', name: 'V4 Flash', tag: 'FAST RESPONSE', description: '快速演示、重复问析与低等待交互' },
 ]
+const overviewSlides: OverviewSlide[] = [
+  { id: 'catalog', module: '数据目录', code: 'MODULE 02 / LIVE DATA CATALOG', title: '让数据资产', highlight: '先被看懂', description: '自动扫描 PostgreSQL 表、字段、样例与真实外键，让后续问析从可信的数据结构出发。', action: '打开数据目录', backdrop: 'DATA', accent: '#2457ff' },
+  { id: 'knowledge', module: '业务知识', code: 'MODULE 03 / SEMANTIC KNOWLEDGE', title: '把业务口径', highlight: '交给 Agent', description: '统一管理指标公式、业务规则、同义词与映射关系，为 RAG 和 Text-to-SQL 提供可审核语义。', action: '打开业务知识', backdrop: 'RULE', accent: '#ff5a36' },
+  { id: 'quality', module: '质量分析', code: 'MODULE 04 / QUALITY INTELLIGENCE', title: '把质量波动', highlight: '追到证据', description: '将良率环比、工序短板、缺陷 Pareto 与每日趋势组织成可下钻、可复核的质量分析闭环。', action: '打开质量驾驶舱', backdrop: 'QUALITY', accent: '#2457ff' },
+  { id: 'equipment', module: '设备异常', code: 'MODULE 05 / EQUIPMENT ANOMALY', title: '别等停机', highlight: '先看偏离', description: '通过固定特征 Recipe 与 Isolation Forest 识别设备行为偏离，再由 DeepSeek 组织核查线索。', action: '打开设备诊断', backdrop: 'SIGNAL', accent: '#087ea4' },
+  { id: 'production', module: '生产趋势', code: 'MODULE 06 / PRODUCTION TREND', title: '把计划差距', highlight: '变成行动线索', description: '审核 Recipe 将末工序口径、计划达成率、七日线性趋势与 DeepSeek 简报连成可复现生产问析链。', action: '打开生产趋势', backdrop: 'TREND', accent: '#2457ff' },
+  { id: 'agent', module: '智能问析', code: 'MODULE 07 / AGENT ANALYSIS', title: '把自然语言', highlight: '变成可靠分析', description: 'DeepSeek 规划、混合 RAG、受控 Text-to-SQL、安全执行与动态图表共同形成有据可查的答案。', action: '启动智能问析', backdrop: 'AGENT', accent: '#ff5a36' },
+  { id: 'settings', module: '模型配置', code: 'MODULE 08 / MODEL CONNECTION', title: '把模型连接', highlight: '安全留在本机', description: '在浏览器中选择 DeepSeek 模型并验证 API Key；密钥仅保存在后端进程内存，重启即清除。', action: '打开模型配置', backdrop: 'MODEL', accent: '#087ea4' },
+]
+const overviewSlideIndex = ref(0)
+const overviewCarouselPaused = ref(false)
+const activeOverviewSlide = computed(() => overviewSlides[overviewSlideIndex.value])
+let overviewTimer: number | undefined
+
+function stopOverviewCarousel() {
+  if (overviewTimer !== undefined) window.clearInterval(overviewTimer)
+  overviewTimer = undefined
+}
+function startOverviewCarousel() {
+  stopOverviewCarousel()
+  if (overviewCarouselPaused.value) return
+  overviewTimer = window.setInterval(() => {
+    overviewSlideIndex.value = (overviewSlideIndex.value + 1) % overviewSlides.length
+  }, 6500)
+}
+function selectOverviewSlide(index: number) {
+  overviewSlideIndex.value = index
+  startOverviewCarousel()
+}
+function pauseOverviewCarousel() {
+  overviewCarouselPaused.value = true
+  stopOverviewCarousel()
+}
+function resumeOverviewCarousel() {
+  overviewCarouselPaused.value = false
+  startOverviewCarousel()
+}
+function handleOverviewFocusOut(event: FocusEvent) {
+  const carousel = event.currentTarget as HTMLElement
+  if (!carousel.contains(event.relatedTarget as Node | null)) resumeOverviewCarousel()
+}
 const deepseekSourceLabel = computed(() => deepseekConfig.value?.source === 'runtime' ? '前端运行时配置' : '尚未配置')
 const agentExamples = [
   { scene: '质量分析', code: 'QUALITY', question: '分析本月各工序良率，找出良率最低的工序' },
@@ -135,7 +191,9 @@ const agentExamples = [
 ]
 const metricForm = reactive<Metric>({ metric_code: '', topic_code: 'quality', metric_name: '', description: '', formula: '', unit: '%', grain: '日期×产线', dimensions: [], mapped_tables: [], owner_name: '比赛项目组', version: '1.0', status: 'draft' })
 
-const systemReady = computed(() => ready.value?.status === 'ready')
+const databaseReady = computed(() => ready.value?.status === 'ready')
+const systemReady = computed(() => databaseReady.value && deepseekConfig.value?.configured === true)
+const systemStatusLabel = computed(() => loading.value ? 'CONNECTING' : !databaseReady.value ? 'SERVICE OFFLINE' : systemReady.value ? 'SYSTEM READY' : 'MODEL REQUIRED')
 const domains = computed(() => ['全部', ...new Set(tables.value.map((item) => item.business_domain))])
 const visibleTables = computed(() => selectedDomain.value === '全部' ? tables.value : tables.value.filter((item) => item.business_domain === selectedDomain.value))
 const visibleMetrics = computed(() => selectedTopic.value === 'all' ? metrics.value : metrics.value.filter((item) => item.topic_code === selectedTopic.value))
@@ -193,15 +251,35 @@ function equipmentPointX(index: number) { const count = equipmentDiagnosis.value
 function equipmentPointY(score: number) { return 220 - 1.65 * score }
 function columnLabel(column: string) { return ({ process_name: '工序', product_name: '产品', equipment_name: '设备', event_reason: '原因', line_name: '产线', business_date: '日期', business_month: '月份', defect_type: '缺陷类型', yield_rate: '良率', defect_rate: '不良率', defect_count: '缺陷数量', cumulative_share: '累计占比', alarm_count: '报警次数', downtime_count: '停机次数', downtime_minutes: '停机时长', final_output: '完工产量', plan_attainment: '计划达成率', inspected_qty: '检验数量' } as Record<string, string>)[column] || column }
 function formatCell(value: string | number, column: string) { return typeof value === 'number' ? `${formatNumber(value)}${['yield_rate', 'defect_rate', 'plan_attainment', 'cumulative_share'].includes(column) ? '%' : ''}` : value }
-async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, options)
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({})) as { detail?: string | { message?: string } }
-    const detail = typeof payload.detail === 'string' ? payload.detail : payload.detail?.message
-    throw new Error(detail || `请求失败：${response.status}`)
+type FetchOptions = RequestInit & { timeoutMs?: number }
+async function fetchJson<T>(url: string, options: FetchOptions = {}): Promise<T> {
+  const { timeoutMs = 20_000, ...requestOptions } = options
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, { ...requestOptions, signal: controller.signal })
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({})) as { detail?: string | { message?: string } }
+      const detail = typeof payload.detail === 'string' ? payload.detail : payload.detail?.message
+      if (response.status === 504) throw new Error('模型请求超时，请稍后重试或切换 V4 Flash')
+      throw new Error(detail || `请求失败：${response.status}`)
+    }
+    return response.status === 204 ? (undefined as T) : await response.json() as T
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === 'AbortError') throw new Error('请求等待超时，请检查网络后重试')
+    if (cause instanceof TypeError) throw new Error(navigator.onLine ? '无法连接后端服务，请确认 Docker 服务正常运行' : '网络连接已断开，请恢复网络后重试')
+    throw cause
+  } finally {
+    window.clearTimeout(timer)
   }
-  return response.status === 204 ? (undefined as T) : await response.json() as T
 }
+
+function requireDeepseek(setError: (message: string) => void) {
+  if (deepseekConfig.value?.configured) return true
+  setError('DeepSeek 尚未配置，请先进入“模型配置”填写 API Key 并完成连接验证。')
+  return false
+}
+function needsDeepseekConfig(message: string) { return message.startsWith('DeepSeek 尚未配置') }
 
 async function loadWorkspace() {
   loading.value = true; error.value = ''
@@ -221,40 +299,47 @@ async function loadWorkspace() {
 }
 async function refreshCatalog() {
   refreshing.value = true
-  try { await fetchJson('/api/v1/catalog/refresh', { method: 'POST' }); tableDetail.value = null; await loadWorkspace() }
+  try { await fetchJson('/api/v1/catalog/refresh', { method: 'POST', timeoutMs: 120_000 }); tableDetail.value = null; await loadWorkspace() }
   catch (cause) { error.value = cause instanceof Error ? cause.message : '目录刷新失败' }
   finally { refreshing.value = false }
 }
 async function selectTable(tableId: number) { tableDetail.value = await fetchJson<TableDetail>(`/api/v1/catalog/tables/${tableId}`) }
 function newMetric() {
   Object.assign(metricForm, { metric_code: '', topic_code: 'quality', metric_name: '', description: '', formula: '', unit: '%', grain: '日期×产线', dimensions: [], mapped_tables: [], owner_name: '比赛项目组', version: '1.0', status: 'draft' })
-  dimensionText.value = ''; mappedTableText.value = ''; editingMetric.value = false; metricEditorOpen.value = true
+  dimensionText.value = ''; mappedTableText.value = ''; editingMetric.value = false; metricError.value = ''; metricEditorOpen.value = true
 }
 function editMetric(metric: Metric) {
   Object.assign(metricForm, metric); dimensionText.value = metric.dimensions.join('、'); mappedTableText.value = metric.mapped_tables.join('、')
-  editingMetric.value = true; metricEditorOpen.value = true
+  editingMetric.value = true; metricError.value = ''; metricEditorOpen.value = true
 }
 async function saveMetric() {
+  if (metricSaving.value) return
   metricForm.dimensions = dimensionText.value.split(/[、,，]/).map((item) => item.trim()).filter(Boolean)
   metricForm.mapped_tables = mappedTableText.value.split(/[、,，]/).map((item) => item.trim()).filter(Boolean)
   const path = editingMetric.value ? `/api/v1/knowledge/metrics/${metricForm.metric_code}` : '/api/v1/knowledge/metrics'
-  await fetchJson(path, { method: editingMetric.value ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(metricForm) })
-  metricEditorOpen.value = false; metrics.value = await fetchJson<Metric[]>('/api/v1/knowledge/metrics')
+  metricSaving.value = true; metricError.value = ''
+  try {
+    await fetchJson(path, { method: editingMetric.value ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(metricForm), timeoutMs: 60_000 })
+    metricEditorOpen.value = false; metrics.value = await fetchJson<Metric[]>('/api/v1/knowledge/metrics')
+  } catch (cause) { metricError.value = cause instanceof Error ? cause.message : '指标口径保存失败' }
+  finally { metricSaving.value = false }
 }
 async function runAgent() {
   if (agentRunning.value || !agentQuestion.value.trim()) return
+  if (!requireDeepseek((message) => { agentError.value = message })) return
   agentRunning.value = true; agentError.value = ''; agentResult.value = null
   try {
     agentResult.value = await fetchJson<AgentRun>('/api/v1/agent/runs', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: agentQuestion.value.trim() }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: agentQuestion.value.trim() }), timeoutMs: 175_000,
     })
   } catch (cause) { agentError.value = cause instanceof Error ? cause.message : 'Agent 执行失败' }
   finally { agentRunning.value = false }
 }
 async function generateQualityBrief() {
   if (qualityBriefRunning.value) return
+  if (!requireDeepseek((message) => { qualityBriefError.value = message })) return
   qualityBriefRunning.value = true; qualityBriefError.value = ''
-  try { qualityBrief.value = await fetchJson<QualityBrief>('/api/v1/agent/quality/brief', { method: 'POST' }) }
+  try { qualityBrief.value = await fetchJson<QualityBrief>('/api/v1/agent/quality/brief', { method: 'POST', timeoutMs: 175_000 }) }
   catch (cause) { qualityBriefError.value = cause instanceof Error ? cause.message : '质量简报生成失败' }
   finally { qualityBriefRunning.value = false }
 }
@@ -263,8 +348,9 @@ function openQualityQuestion(question: string) {
 }
 async function generateEquipmentDiagnosis() {
   if (equipmentRunning.value) return
+  if (!requireDeepseek((message) => { equipmentError.value = message })) return
   equipmentRunning.value = true; equipmentError.value = ''
-  try { equipmentDiagnosis.value = await fetchJson<EquipmentDiagnosis>('/api/v1/agent/equipment/diagnosis', { method: 'POST' }) }
+  try { equipmentDiagnosis.value = await fetchJson<EquipmentDiagnosis>('/api/v1/agent/equipment/diagnosis', { method: 'POST', timeoutMs: 175_000 }) }
   catch (cause) { equipmentError.value = cause instanceof Error ? cause.message : '设备异常诊断失败' }
   finally { equipmentRunning.value = false }
 }
@@ -273,15 +359,16 @@ function openEquipmentQuestion(question: string) {
 }
 async function generateProductionTrend() {
   if (productionRunning.value) return
+  if (!requireDeepseek((message) => { productionError.value = message })) return
   productionRunning.value = true; productionError.value = ''
-  try { productionTrend.value = await fetchJson<ProductionTrend>('/api/v1/agent/production/trend', { method: 'POST' }) }
+  try { productionTrend.value = await fetchJson<ProductionTrend>('/api/v1/agent/production/trend', { method: 'POST', timeoutMs: 175_000 }) }
   catch (cause) { productionError.value = cause instanceof Error ? cause.message : '生产趋势分析失败' }
   finally { productionRunning.value = false }
 }
 async function evaluateAlgorithms() {
   if (algorithmRunning.value) return
   algorithmRunning.value = true; algorithmError.value = ''
-  try { algorithmSuite.value = await fetchJson<AlgorithmSuite>('/api/v1/agent/algorithms/evaluate', { method: 'POST' }) }
+  try { algorithmSuite.value = await fetchJson<AlgorithmSuite>('/api/v1/agent/algorithms/evaluate', { method: 'POST', timeoutMs: 120_000 }) }
   catch (cause) { algorithmError.value = cause instanceof Error ? cause.message : '六算法验收失败' }
   finally { algorithmRunning.value = false }
 }
@@ -293,7 +380,7 @@ async function saveDeepseekConfig() {
   deepseekConfigSaving.value = true
   try {
     deepseekConfig.value = await fetchJson<DeepSeekConfigStatus>('/api/v1/system/deepseek/config', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ api_key: apiKey || null, model: deepseekSelectedModel.value, verify: true }),
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ api_key: apiKey || null, model: deepseekSelectedModel.value, verify: true }), timeoutMs: 165_000,
     })
     deepseekApiKey.value = ''; showDeepseekApiKey.value = false
     if (ready.value) ready.value.dependencies.deepseek = 'configured'
@@ -315,10 +402,21 @@ async function clearDeepseekConfig() {
 function openProductionQuestion(question: string) {
   agentQuestion.value = question; agentResult.value = null; agentError.value = ''; activeView.value = 'agent'
 }
-onMounted(loadWorkspace)
+onMounted(() => {
+  loadWorkspace()
+  startOverviewCarousel()
+})
+onBeforeUnmount(stopOverviewCarousel)
 </script>
 
 <template>
+  <aside class="desktop-only-gate" role="status" aria-label="桌面端访问提示">
+    <div class="desktop-gate-mark">A<span>07</span></div>
+    <p class="section-code">DESKTOP WORKSPACE ONLY</p>
+    <h2>请使用电脑浏览器<br />打开分析工作台</h2>
+    <p>比赛版本已聚焦桌面端数据分析体验，不再提供手机端业务页面。</p>
+    <code>RECOMMENDED DESKTOP · 1440 × 900</code>
+  </aside>
   <main class="shell">
     <div class="blueprint" aria-hidden="true"></div>
     <header class="masthead">
@@ -334,16 +432,30 @@ onMounted(loadWorkspace)
       <button :class="{ active: activeView === 'production' }" @click="activeView = 'production'">生产趋势 <span>06</span></button>
       <button :class="{ active: activeView === 'agent' }" @click="activeView = 'agent'">智能问析 <span>07</span></button>
       <button :class="{ active: activeView === 'settings' }" @click="activeView = 'settings'">模型配置 <span>08</span></button>
-      <div class="system-pill" :class="{ ready: systemReady }"><i></i>{{ systemReady ? 'SYSTEM READY' : 'CONNECTING' }}</div>
+      <div class="system-pill" :class="{ ready: systemReady }"><i></i>{{ systemStatusLabel }}</div>
     </nav>
     <div v-if="error" class="error-banner">{{ error }} <button @click="loadWorkspace">重试</button></div>
     <div v-if="loading" class="loading-screen"><i></i><span>正在扫描制造数据资产…</span></div>
 
     <template v-else>
       <section v-if="activeView === 'overview'" class="overview-view">
-        <div class="hero-grid">
-          <article class="hero-copy"><p class="section-code">PHASE 06 / PRODUCTION TREND SPECIALIZATION</p><h2>把计划差距<br />变成<span>行动线索</span></h2><p>审核 Recipe 将末工序口径、计划达成率、七日线性趋势与 DeepSeek 简报连成可复现生产问析链。</p><button class="primary-action" @click="activeView = 'production'">打开生产趋势 <b>→</b></button></article>
-          <article class="date-card"><span>DATASET ANCHOR</span><strong>{{ summary?.dataset_max_business_date }}</strong><p>所有“本月 / 最近 30 天”等相对时间均以此业务日期为准。</p></article>
+        <div class="hero-grid overview-carousel" :class="{ paused: overviewCarouselPaused }" role="region" aria-roledescription="carousel" aria-label="系统功能模块轮播" @mouseenter="pauseOverviewCarousel" @mouseleave="resumeOverviewCarousel" @focusin="pauseOverviewCarousel" @focusout="handleOverviewFocusOut">
+          <Transition name="overview-slide" mode="out-in">
+            <article :key="activeOverviewSlide.id" class="hero-copy overview-slide" :style="{ '--slide-accent': activeOverviewSlide.accent }" :data-backdrop="activeOverviewSlide.backdrop">
+              <p class="section-code">{{ activeOverviewSlide.code }}</p>
+              <h2>{{ activeOverviewSlide.title }}<br /><span>{{ activeOverviewSlide.highlight }}</span></h2>
+              <p>{{ activeOverviewSlide.description }}</p>
+              <button class="primary-action" @click="activeView = activeOverviewSlide.id">{{ activeOverviewSlide.action }} <b>→</b></button>
+              <div class="overview-slide-progress" aria-hidden="true"><i :key="overviewSlideIndex"></i></div>
+            </article>
+          </Transition>
+          <aside class="overview-module-rail">
+            <header><span>MODULE LOOP</span><strong>{{ String(overviewSlideIndex + 1).padStart(2, '0') }} / {{ String(overviewSlides.length).padStart(2, '0') }}</strong></header>
+            <div>
+              <button v-for="(slide, index) in overviewSlides" :key="slide.id" :class="{ active: index === overviewSlideIndex }" :aria-current="index === overviewSlideIndex ? 'true' : undefined" @click="selectOverviewSlide(index)"><b>{{ String(index + 2).padStart(2, '0') }}</b><span>{{ slide.module }}</span><i></i></button>
+            </div>
+            <footer><span>DATASET ANCHOR</span><strong>{{ summary?.dataset_max_business_date }}</strong></footer>
+          </aside>
         </div>
         <div class="stat-strip">
           <div><small>TABLES</small><strong>{{ summary?.table_count }}</strong><span>9 主表 + 1 留出表</span></div><div><small>COLUMNS</small><strong>{{ summary?.column_count }}</strong><span>含注释与脱敏样例</span></div>
@@ -399,7 +511,7 @@ onMounted(loadWorkspace)
           <button @click="openQualityQuestion('对比本月与上月总体良率')"><b>03</b> 月度环比 <i>→</i></button>
         </div>
 
-        <div v-if="qualityBriefError" class="agent-error"><strong>质量简报未完成</strong><p>{{ qualityBriefError }}</p><button @click="generateQualityBrief">重新生成</button></div>
+        <div v-if="qualityBriefError" class="agent-error"><strong>质量简报未完成</strong><p>{{ qualityBriefError }}</p><button v-if="needsDeepseekConfig(qualityBriefError)" @click="activeView = 'settings'">前往模型配置</button><button v-else @click="generateQualityBrief">重新生成</button></div>
         <div v-if="qualityBriefRunning" class="quality-loading">
           <div class="quality-loader"><i></i><i></i><i></i><i></i></div>
           <div><span>LANGGRAPH QUALITY BRIEF</span><h3>正在汇集质量证据与真实指标</h3><p>检索三组 EvidenceBundle，执行四组只读聚合，再由 DeepSeek 形成管理层简报。</p></div>
@@ -481,7 +593,7 @@ onMounted(loadWorkspace)
         </header>
 
         <div class="equipment-query-strip"><span>SQL 下钻</span><button @click="openEquipmentQuestion('本月各设备报警次数排名')"><b>01</b> 报警频次 <i>→</i></button><button @click="openEquipmentQuestion('本月各设备非计划停机次数排名')"><b>02</b> 停机次数 <i>→</i></button><button @click="openEquipmentQuestion('本月各设备非计划停机时长排名')"><b>03</b> 停机时长 <i>→</i></button></div>
-        <div v-if="equipmentError" class="agent-error"><strong>设备诊断未完成</strong><p>{{ equipmentError }}</p><button @click="generateEquipmentDiagnosis">重新运行</button></div>
+        <div v-if="equipmentError" class="agent-error"><strong>设备诊断未完成</strong><p>{{ equipmentError }}</p><button v-if="needsDeepseekConfig(equipmentError)" @click="activeView = 'settings'">前往模型配置</button><button v-else @click="generateEquipmentDiagnosis">重新运行</button></div>
         <div v-if="equipmentRunning" class="equipment-loading"><div class="radar-loader"><i></i><b></b><span></span></div><div><p class="section-code">RECIPE IS RUNNING</p><h3>正在训练基线并扫描设备日偏离</h3><p>Feature SQL → StandardScaler → Isolation Forest → Median/IQR Explanation → DeepSeek Brief</p></div></div>
         <section v-else-if="!equipmentDiagnosis" class="equipment-empty"><div class="machine-index"><b>E08</b><span>KNOWN SIGNAL / HIDDEN FROM MODEL</span></div><div><p class="section-code">AUDITABLE ANOMALY WORKFLOW</p><h3>一次运行，展示从特征到解释的完整算法证据</h3><p>系统不会读取预设答案。E08 的异常模式埋在设备事件数据中，需由固定 Recipe 现场识别。</p></div></section>
 
@@ -522,7 +634,7 @@ onMounted(loadWorkspace)
         </header>
 
         <div class="production-query-strip"><span>SQL 下钻</span><button @click="openProductionQuestion('本月各产线完工产量排名')"><b>01</b> 完工产量 <i>→</i></button><button @click="openProductionQuestion('本月各产线计划达成率')"><b>02</b> 计划达成 <i>→</i></button><button @click="openProductionQuestion('最近30天每日完工产量趋势')"><b>03</b> 每日趋势 <i>→</i></button></div>
-        <div v-if="productionError" class="agent-error"><strong>生产趋势未完成</strong><p>{{ productionError }}</p><button @click="generateProductionTrend">重新运行</button></div>
+        <div v-if="productionError" class="agent-error"><strong>生产趋势未完成</strong><p>{{ productionError }}</p><button v-if="needsDeepseekConfig(productionError)" @click="activeView = 'settings'">前往模型配置</button><button v-else @click="generateProductionTrend">重新运行</button></div>
         <div v-if="productionRunning" class="production-loading"><div class="production-loader"><i v-for="n in 7" :key="n" :style="{ height: `${24 + n * 8}px` }"></i></div><div><p class="section-code">PRODUCTION RECIPE IS RUNNING</p><h3>正在核对口径并拟合七日斜率</h3><p>RAG Evidence → Safe SQL → LinearRegression → Plan Assessment → DeepSeek Brief</p></div></div>
         <section v-else-if="!productionTrend" class="production-empty"><div class="trend-index"><b>95.86</b><span>KNOWN KPI / CALCULATED LIVE</span></div><div><p class="section-code">AUDITABLE PRODUCTION WORKFLOW</p><h3>一次运行，回答“完成多少、差在哪里、方向怎样”</h3><p>页面不会读取预设结论。计划达成率和七日斜率均在运行时从末工序事实表计算。</p></div></section>
 
@@ -578,7 +690,7 @@ onMounted(loadWorkspace)
           </button>
         </div>
         <div v-if="agentRunning" class="agent-progress"><i></i><p><strong>DeepSeek 正在推理并生成 SQL</strong><span>完整链路通常需要 30–90 秒，请保持页面开启。</span></p></div>
-        <div v-if="agentError" class="agent-error"><strong>本次执行未完成</strong><p>{{ agentError }}</p><button @click="runAgent">重新运行</button></div>
+        <div v-if="agentError" class="agent-error"><strong>本次执行未完成</strong><p>{{ agentError }}</p><button v-if="needsDeepseekConfig(agentError)" @click="activeView = 'settings'">前往模型配置</button><button v-else @click="runAgent">重新运行</button></div>
 
         <template v-if="agentResult">
           <section class="run-summary">
@@ -697,6 +809,6 @@ onMounted(loadWorkspace)
       </section>
     </template>
 
-    <div v-if="metricEditorOpen" class="modal-backdrop" @click.self="metricEditorOpen = false"><form class="metric-editor" @submit.prevent="saveMetric"><header><div><p class="section-code">METRIC DEFINITION</p><h2>{{ editingMetric ? '编辑指标口径' : '新增指标口径' }}</h2></div><button type="button" @click="metricEditorOpen = false">×</button></header><div class="form-grid"><label>指标编码<input v-model="metricForm.metric_code" :disabled="editingMetric" required pattern="[a-z][a-z0-9_]{2,48}" /></label><label>业务主题<select v-model="metricForm.topic_code"><option v-for="topic in topics" :key="topic.topic_code" :value="topic.topic_code">{{ topic.topic_name }}</option></select></label><label>指标名称<input v-model="metricForm.metric_name" required /></label><label>单位<input v-model="metricForm.unit" required /></label><label class="wide">业务说明<textarea v-model="metricForm.description" required></textarea></label><label class="wide">计算公式<textarea v-model="metricForm.formula" class="formula-input" required></textarea></label><label>统计粒度<input v-model="metricForm.grain" required /></label><label>状态<select v-model="metricForm.status"><option value="draft">草稿</option><option value="published">已发布</option><option value="disabled">已停用</option></select></label><label class="wide">可用维度（顿号分隔）<input v-model="dimensionText" /></label><label class="wide">映射表（顿号分隔）<input v-model="mappedTableText" /></label></div><footer><button type="button" @click="metricEditorOpen = false">取消</button><button class="save" type="submit">保存口径</button></footer></form></div>
+    <div v-if="metricEditorOpen" class="modal-backdrop" @click.self="metricEditorOpen = false"><form class="metric-editor" @submit.prevent="saveMetric"><header><div><p class="section-code">METRIC DEFINITION</p><h2>{{ editingMetric ? '编辑指标口径' : '新增指标口径' }}</h2></div><button type="button" :disabled="metricSaving" @click="metricEditorOpen = false">×</button></header><div class="form-grid"><label>指标编码<input v-model="metricForm.metric_code" :disabled="editingMetric" required pattern="[a-z][a-z0-9_]{2,48}" /></label><label>业务主题<select v-model="metricForm.topic_code"><option v-for="topic in topics" :key="topic.topic_code" :value="topic.topic_code">{{ topic.topic_name }}</option></select></label><label>指标名称<input v-model="metricForm.metric_name" required /></label><label>单位<input v-model="metricForm.unit" required /></label><label class="wide">业务说明<textarea v-model="metricForm.description" required></textarea></label><label class="wide">计算公式<textarea v-model="metricForm.formula" class="formula-input" required></textarea></label><label>统计粒度<input v-model="metricForm.grain" required /></label><label>状态<select v-model="metricForm.status"><option value="draft">草稿</option><option value="published">已发布</option><option value="disabled">已停用</option></select></label><label class="wide">可用维度（顿号分隔）<input v-model="dimensionText" /></label><label class="wide">映射表（顿号分隔）<input v-model="mappedTableText" /></label></div><div v-if="metricError" class="config-feedback error">{{ metricError }}</div><footer><button type="button" :disabled="metricSaving" @click="metricEditorOpen = false">取消</button><button class="save" type="submit" :disabled="metricSaving">{{ metricSaving ? '正在保存…' : '保存口径' }}</button></footer></form></div>
   </main>
 </template>

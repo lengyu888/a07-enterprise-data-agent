@@ -6,6 +6,7 @@ import './polish.css'
 import './stage6.css'
 import './readability.css'
 import './model-settings.css'
+import './desktop.css'
 
 createApp(App).mount('#app')
 
