@@ -47,10 +47,10 @@
 
 ## 4. 本地验收
 
-使用 Docker Secret 配置启动：
+启动容器后，先在“模型配置 08”填写 Key，再运行验收：
 
 ```powershell
-docker compose -f compose.yml -f compose.deepseek.yml up --build -d
+docker compose up --build -d
 powershell -ExecutionPolicy Bypass -File .\scripts\test-stage4.ps1
 ```
 

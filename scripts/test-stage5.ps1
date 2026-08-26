@@ -8,14 +8,14 @@ function Assert-True {
 }
 
 Write-Host 'Checking Stage 5 Docker services...' -ForegroundColor Cyan
-$services = docker compose -f compose.yml -f compose.deepseek.yml ps --format json | ConvertFrom-Json
+$services = docker compose ps --format json | ConvertFrom-Json
 Assert-True (($services | Measure-Object).Count -eq 3) 'three services are running'
 Assert-True ((@($services | Where-Object { $_.Health -ne 'healthy' })).Count -eq 0) 'all services are healthy'
 
 $ready = Invoke-RestMethod 'http://localhost:8000/api/ready'
 $bootstrap = Invoke-RestMethod 'http://localhost:8000/api/v1/system/bootstrap'
 $capabilities = Invoke-RestMethod 'http://localhost:8000/api/v1/agent/capabilities'
-Assert-True ($ready.dependencies.deepseek -eq 'configured') 'DeepSeek Docker Secret is mounted'
+Assert-True ($ready.dependencies.deepseek -eq 'configured') 'DeepSeek was configured from the frontend page'
 Assert-True ($bootstrap.phase -eq 'phase-5') 'bootstrap contract reports phase 5'
 Assert-True (@($capabilities.equipment_specialization).Count -eq 5) 'five equipment specialization capabilities are exposed'
 

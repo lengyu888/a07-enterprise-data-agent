@@ -45,6 +45,13 @@ h1,
 .reason-card h3,
 .equipment-brief h3,
 .recipe-proof h3,
+.production-intro h2,
+.production-loading h3,
+.production-empty h3,
+.production-panel h3,
+.slope-section h3,
+.production-brief h3,
+.algorithm-lab h3,
 .agent-hero h2,
 .trace-section h3,
 .evidence-card h3,
@@ -129,6 +136,7 @@ h1 {
 .knowledge-view,
 .quality-view,
 .equipment-view,
+.production-view,
 .agent-view { padding-top: 18px; }
 
 .hero-grid { gap: 15px; }

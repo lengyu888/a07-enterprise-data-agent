@@ -28,7 +28,7 @@ def main() -> None:
         )
         page.goto(BASE_URL)
         page.wait_for_load_state("networkidle")
-        page.get_by_role("button", name="智能问析 04").click()
+        page.get_by_role("button", name="智能问析 07").click()
 
         assert page.get_by_role("heading", name="一句话，走完分析链路").is_visible()
         assert page.get_by_label("分析问题").input_value() == "分析本月各工序良率，找出良率最低的工序"
@@ -50,7 +50,7 @@ def main() -> None:
         mobile = browser.new_page(viewport={"width": 390, "height": 844})
         mobile.goto(BASE_URL)
         mobile.wait_for_load_state("networkidle")
-        mobile.locator(".view-nav button").nth(3).click()
+        mobile.locator(".view-nav button").nth(6).click()
         assert mobile.get_by_label("分析问题").is_visible()
         assert mobile.get_by_role("button", name="启动智能问析 →").is_visible()
         mobile.wait_for_timeout(550)

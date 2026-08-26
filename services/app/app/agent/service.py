@@ -8,8 +8,10 @@ from uuid import uuid4
 from sqlalchemy import text
 
 from app.agent.analysis_graph import HybridAnalysisGraph, SUPPORTED_QUESTIONS
-from app.agent.quality_brief_graph import build_quality_brief
+from app.agent.algorithm_suite import ALGORITHM_ORDER, evaluate_algorithm_suite, list_algorithm_recipes
 from app.agent.equipment_anomaly_graph import EquipmentAnomalyGraph
+from app.agent.production_trend_graph import ProductionTrendGraph
+from app.agent.quality_brief_graph import build_quality_brief
 from app.core.config import get_settings
 from app.core.database import get_engine
 
@@ -204,9 +206,66 @@ def run_equipment_diagnosis() -> dict[str, Any]:
     }
 
 
+def run_production_trend() -> dict[str, Any]:
+    settings = get_settings()
+    if not settings.deepseek_configured:
+        raise AgentRunError("DeepSeek Secret 未配置，无法生成生产趋势简报", "not-created")
+    run_id = str(uuid4())
+    started = time.perf_counter()
+    engine = get_engine()
+    with engine.begin() as connection:
+        connection.execute(text("""
+            INSERT INTO app.algorithm_run (run_id, recipe_code, scene, status, model_version)
+            VALUES (:run_id, 'production-7d-linear-trend-v1', 'production', 'running', '1.0')
+        """), {"run_id": run_id})
+    try:
+        state = ProductionTrendGraph(settings).invoke(run_id)
+        duration_ms = max(1, round((time.perf_counter() - started) * 1000))
+        attention_line = state["assessment"]["attention_line"]["line_name"]
+        with engine.begin() as connection:
+            connection.execute(text("""
+                UPDATE app.algorithm_run SET status='completed', input_rows=:input_rows,
+                    anomaly_rows=0, top_entity=:top_entity, duration_ms=:duration_ms,
+                    completed_at=NOW() WHERE run_id=:run_id
+            """), {"run_id": run_id, "input_rows": len(state["feature_rows"]),
+                     "top_entity": attention_line, "duration_ms": duration_ms})
+    except Exception as exc:
+        duration_ms = max(1, round((time.perf_counter() - started) * 1000))
+        with engine.begin() as connection:
+            connection.execute(text("""
+                UPDATE app.algorithm_run SET status='failed', error_message=:error,
+                    duration_ms=:duration_ms, completed_at=NOW() WHERE run_id=:run_id
+            """), {"run_id": run_id, "error": str(exc)[:500], "duration_ms": duration_ms})
+        raise AgentRunError(str(exc)[:500], run_id) from exc
+    return {
+        "run_id": run_id, "status": "completed", "duration_ms": duration_ms,
+        "period": {"start": "2025-12-01", "end": "2025-12-29", "anchor": "2025-12-29", "trend_window": "2025-12-23..2025-12-29"},
+        "recipe": {
+            "code": state["recipe"]["recipe_code"], "name": state["recipe"]["recipe_name"],
+            "algorithm": state["recipe"]["algorithm_name"], "version": state["recipe"]["version"],
+            "features": state["recipe"]["feature_columns"], "parameters": state["recipe"]["parameters"],
+            "feature_sql": state["recipe"]["feature_sql"], "explanation_rule": state["recipe"]["explanation_rule"],
+        },
+        "assessment": state["assessment"], "ranking": state["monthly_rows"],
+        "daily_trend": state["daily_total"], "line_trends": state["line_trends"],
+        "brief": state["brief"], "evidence": state["evidence"], "trace": state["trace"],
+    }
+
+
+def algorithm_recipes() -> dict[str, Any]:
+    return list_algorithm_recipes()
+
+
+def run_algorithm_evaluation() -> dict[str, Any]:
+    try:
+        return evaluate_algorithm_suite()
+    except Exception as exc:
+        raise AgentRunError(str(exc)[:500], "algorithm-suite") from exc
+
+
 def capabilities() -> dict[str, Any]:
     return {
-        "phase": "phase-5",
+        "phase": "phase-6",
         "supported_scenes": ["quality", "equipment", "production"],
         "supported_questions": SUPPORTED_QUESTIONS,
         "pipeline": ["retrieve", "plan", "text_to_sql", "validate_sql", "repair_sql", "execute_sql", "build_chart", "summarize"],
@@ -214,6 +273,8 @@ def capabilities() -> dict[str, Any]:
         "rag": {"channels": ["exact", "pg_trgm", "pgvector"], "fusion": "RRF", "top_k": 10},
         "quality_specialization": ["process_yield", "defect_pareto", "daily_yield_trend", "month_over_month", "management_brief"],
         "equipment_specialization": ["daily_feature_recipe", "isolation_forest", "anomaly_ranking", "robust_deviation", "diagnosis_brief"],
+        "production_specialization": ["final_process_output", "plan_attainment", "seven_day_slope", "production_brief"],
+        "algorithm_recipes": ALGORITHM_ORDER,
     }
 
 
@@ -274,4 +335,30 @@ def stage5_evaluation_summary() -> dict[str, Any]:
         "stage": "phase-5", "required_consecutive_successes": 3,
         "consecutive_successes": consecutive, "passed": consecutive >= 3,
         "latest_runs": rows[:3],
+    }
+
+
+def stage6_evaluation_summary() -> dict[str, Any]:
+    with get_engine().connect() as connection:
+        production_runs = [dict(row) for row in connection.execute(text("""
+            SELECT run_id, status, input_rows, top_entity, duration_ms, started_at
+            FROM app.algorithm_run WHERE recipe_code='production-7d-linear-trend-v1'
+            ORDER BY started_at DESC LIMIT 10
+        """)).mappings()]
+        suite = connection.execute(text("""
+            SELECT run_id, status, algorithm_count, duration_ms, completed_at
+            FROM app.algorithm_evaluation_run ORDER BY started_at DESC LIMIT 1
+        """)).mappings().one_or_none()
+    consecutive = 0
+    for row in production_runs:
+        if row["status"] != "completed":
+            break
+        consecutive += 1
+    suite_row = dict(suite) if suite else None
+    return {
+        "stage": "phase-6", "required_consecutive_successes": 3,
+        "consecutive_successes": consecutive,
+        "algorithm_suite": suite_row,
+        "passed": consecutive >= 3 and bool(suite_row and suite_row["status"] == "completed" and suite_row["algorithm_count"] == 6),
+        "latest_runs": production_runs[:3],
     }

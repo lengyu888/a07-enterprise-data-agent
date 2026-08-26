@@ -59,7 +59,8 @@
 ## 4. 本地验收
 
 ```powershell
-docker compose -f compose.yml -f compose.deepseek.yml up --build -d
+docker compose up --build -d
+# 打开工作台“模型配置 08”填写 Key 后继续
 powershell -ExecutionPolicy Bypass -File .\scripts\test-stage5.ps1
 ```
 

@@ -3,6 +3,10 @@ import { computed, onMounted, reactive, ref } from 'vue'
 
 type ReadyPayload = { status: string; dependencies: { database: string; deepseek: string } }
 type BootstrapPayload = { phase: string; next_milestone: string }
+type DeepSeekConfigStatus = {
+  configured: boolean; status: string; source: 'runtime' | 'none'
+  model: string; base_url: string; reasoning_effort: string; runtime_only: boolean; can_clear: boolean; verified?: boolean
+}
 type CatalogSummary = { table_count: number; column_count: number; relation_count: number; total_rows: number; refreshed_at: string; dataset_max_business_date: string }
 type CatalogTable = { id: number; schema_name: string; table_name: string; display_name: string; description: string; business_domain: string; row_count: number; column_count: number }
 type CatalogColumn = { id: number; column_name: string; data_type: string; is_nullable: boolean; is_primary_key: boolean; description: string; sample_values: unknown[] }
@@ -57,9 +61,35 @@ type EquipmentDiagnosis = {
 }
 type EquipmentRank = { equipment_id: string; equipment_name: string; equipment_type: string; line_name: string; anomaly_days: number; max_anomaly_score: number; total_downtime_minutes: number; max_single_duration: number; alarm_count: number }
 
-const activeView = ref<'overview' | 'catalog' | 'knowledge' | 'quality' | 'equipment' | 'agent'>('overview')
+type ProductionTrend = {
+  run_id: string; status: string; duration_ms: number
+  period: { start: string; end: string; anchor: string; trend_window: string }
+  recipe: { code: string; name: string; algorithm: string; version: string; features: string[]; parameters: Record<string, number | string>; feature_sql: string; explanation_rule: string }
+  assessment: { final_output: number; planned_qty: number; plan_attainment: number; best_line: ProductionLine; attention_line: ProductionLine; rising_lines: number; declining_lines: number; status: string; trend_disclaimer: string }
+  ranking: ProductionLine[]
+  daily_trend: Array<{ business_date: string; final_output: number; planned_qty: number; plan_attainment: number }>
+  line_trends: Array<{ line_id: string; line_name: string; window_start: string; window_end: string; slope_per_day: number; direction: string; start_output: number; end_output: number; series: Array<{ business_date: string; final_output: number }> }>
+  brief: { headline: string; summary: string; observations: string[]; actions: string[]; generation_mode: string }
+  evidence: { metrics: Array<{ code: string; name: string; formula: string; version: string }>; tables: string[]; rules: string[]; sources: string[]; retrieval: Array<{ strategy: string; context_reduction_pct: number }> }
+  trace: AgentTrace[]
+}
+type ProductionLine = { line_id: string; line_name: string; final_output: number; planned_qty: number; plan_attainment: number; slope_per_day: number; direction: string }
+type AlgorithmSuite = {
+  run_id: string; status: string; algorithm_count: number; passed_count: number; duration_ms: number
+  algorithms: Array<{ algorithm: string; scene: string; use_case: string; status: string; rows: { training: number; validation: number }; metrics: Record<string, number>; boundary: string }>
+  guardrail: string
+}
+
+const activeView = ref<'overview' | 'catalog' | 'knowledge' | 'quality' | 'equipment' | 'production' | 'agent' | 'settings'>('overview')
 const ready = ref<ReadyPayload | null>(null)
 const bootstrap = ref<BootstrapPayload | null>(null)
+const deepseekConfig = ref<DeepSeekConfigStatus | null>(null)
+const deepseekApiKey = ref('')
+const deepseekSelectedModel = ref('deepseek-v4-pro')
+const deepseekConfigSaving = ref(false)
+const deepseekConfigError = ref('')
+const deepseekConfigMessage = ref('')
+const showDeepseekApiKey = ref(false)
 const summary = ref<CatalogSummary | null>(null)
 const tables = ref<CatalogTable[]>([])
 const relations = ref<Relation[]>([])
@@ -87,6 +117,17 @@ const qualityBriefError = ref('')
 const equipmentDiagnosis = ref<EquipmentDiagnosis | null>(null)
 const equipmentRunning = ref(false)
 const equipmentError = ref('')
+const productionTrend = ref<ProductionTrend | null>(null)
+const productionRunning = ref(false)
+const productionError = ref('')
+const algorithmSuite = ref<AlgorithmSuite | null>(null)
+const algorithmRunning = ref(false)
+const algorithmError = ref('')
+const deepseekModels = [
+  { id: 'deepseek-v4-pro', name: 'V4 Pro', tag: 'DEEP REASONING', description: '复杂 Text-to-SQL、分析规划与管理简报' },
+  { id: 'deepseek-v4-flash', name: 'V4 Flash', tag: 'FAST RESPONSE', description: '快速演示、重复问析与低等待交互' },
+]
+const deepseekSourceLabel = computed(() => deepseekConfig.value?.source === 'runtime' ? '前端运行时配置' : '尚未配置')
 const agentExamples = [
   { scene: '质量分析', code: 'QUALITY', question: '分析本月各工序良率，找出良率最低的工序' },
   { scene: '设备停机', code: 'EQUIPMENT', question: '本月各设备非计划停机时长排名' },
@@ -127,16 +168,27 @@ function lineX(index: number) { return chartValues.value.length <= 1 ? 400 : 55 
 function lineY(value: number) { return 235 - 190 * (value - chartBaseline.value) / (chartCeiling.value - chartBaseline.value) }
 const linePoints = computed(() => chartValues.value.map((value, index) => `${lineX(index)},${lineY(value)}`).join(' '))
 const paretoLinePoints = computed(() => (agentResult.value?.chart.series[1]?.data ?? []).map((value, index, values) => `${values.length <= 1 ? 400 : 70 + index * 660 / (values.length - 1)},${245 - 2 * value}`).join(' '))
-const qualityTrendPoints = computed(() => {
-  const values = qualityBrief.value?.charts.trend.map((item) => item.yield_rate) ?? []
-  if (!values.length) return ''
-  const min = Math.floor(Math.min(...values) - 0.5); const max = Math.ceil(Math.max(...values) + 0.5)
-  return values.map((value, index) => `${values.length <= 1 ? 400 : 45 + index * 710 / (values.length - 1)},${220 - 165 * (value - min) / Math.max(max - min, 1)}`).join(' ')
-})
+const qualityTrendValues = computed(() => qualityBrief.value?.charts.trend.map((item) => item.yield_rate) ?? [])
+const qualityTrendMin = computed(() => Math.floor(Math.min(...(qualityTrendValues.value.length ? qualityTrendValues.value : [0])) - 0.5))
+const qualityTrendMax = computed(() => Math.ceil(Math.max(...(qualityTrendValues.value.length ? qualityTrendValues.value : [1])) + 0.5))
+const qualityTrendPoints = computed(() => qualityTrendValues.value.map((value, index, values) => `${values.length <= 1 ? 400 : 45 + index * 710 / (values.length - 1)},${220 - 165 * (value - qualityTrendMin.value) / Math.max(qualityTrendMax.value - qualityTrendMin.value, 1)}`).join(' '))
 const qualityParetoMax = computed(() => Math.max(...(qualityBrief.value?.charts.pareto.map((item) => item.defect_count) ?? [1])))
 const equipmentTimelinePoints = computed(() => (equipmentDiagnosis.value?.timeline ?? []).map((item, index, rows) => `${rows.length <= 1 ? 400 : 45 + index * 710 / (rows.length - 1)},${220 - 1.65 * item.anomaly_score}`).join(' '))
 const equipmentDeviationMax = computed(() => Math.max(...(equipmentDiagnosis.value?.deviations.map((item) => Math.abs(item.robust_deviation)) ?? [1])))
 const equipmentReasonMax = computed(() => Math.max(...(equipmentDiagnosis.value?.reason_distribution.map((item) => item.duration_minutes) ?? [1])))
+const productionTrendPoints = computed(() => {
+  const values = productionTrend.value?.daily_trend.map((item) => item.final_output) ?? []
+  if (!values.length) return ''
+  const minimum = Math.floor(Math.min(...values) - 30); const maximum = Math.ceil(Math.max(...values) + 30)
+  return values.map((value, index) => `${values.length <= 1 ? 400 : 45 + index * 710 / (values.length - 1)},${220 - 165 * (value - minimum) / Math.max(maximum - minimum, 1)}`).join(' ')
+})
+const productionTrendMin = computed(() => Math.floor(Math.min(...(productionTrend.value?.daily_trend.map((item) => item.final_output) ?? [0])) - 30))
+const productionTrendMax = computed(() => Math.ceil(Math.max(...(productionTrend.value?.daily_trend.map((item) => item.final_output) ?? [1])) + 30))
+const productionTrendMid = computed(() => Math.round((productionTrendMax.value + productionTrendMin.value) / 2))
+const productionSlopeMax = computed(() => Math.max(...(productionTrend.value?.ranking.map((item) => Math.abs(item.slope_per_day)) ?? [1])))
+const algorithmMetric = (metrics: Record<string, number>) => Object.entries(metrics).map(([key, value]) => `${key} ${value}`).join(' · ')
+function productionPointX(index: number) { const count = productionTrend.value?.daily_trend.length ?? 1; return count <= 1 ? 400 : 45 + index * 710 / (count - 1) }
+function productionPointY(value: number) { return 220 - 165 * (value - productionTrendMin.value) / Math.max(productionTrendMax.value - productionTrendMin.value, 1) }
 function equipmentPointX(index: number) { const count = equipmentDiagnosis.value?.timeline.length ?? 1; return count <= 1 ? 400 : 45 + index * 710 / (count - 1) }
 function equipmentPointY(score: number) { return 220 - 1.65 * score }
 function columnLabel(column: string) { return ({ process_name: '工序', product_name: '产品', equipment_name: '设备', event_reason: '原因', line_name: '产线', business_date: '日期', business_month: '月份', defect_type: '缺陷类型', yield_rate: '良率', defect_rate: '不良率', defect_count: '缺陷数量', cumulative_share: '累计占比', alarm_count: '报警次数', downtime_count: '停机次数', downtime_minutes: '停机时长', final_output: '完工产量', plan_attainment: '计划达成率', inspected_qty: '检验数量' } as Record<string, string>)[column] || column }
@@ -154,13 +206,14 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
 async function loadWorkspace() {
   loading.value = true; error.value = ''
   try {
-    const [r, b, s, t, rel, knowledge, m] = await Promise.all([
+    const [r, b, config, s, t, rel, knowledge, m] = await Promise.all([
       fetchJson<ReadyPayload>('/api/ready'), fetchJson<BootstrapPayload>('/api/v1/system/bootstrap'),
+      fetchJson<DeepSeekConfigStatus>('/api/v1/system/deepseek/config'),
       fetchJson<CatalogSummary>('/api/v1/catalog/summary'), fetchJson<CatalogTable[]>('/api/v1/catalog/tables'),
       fetchJson<Relation[]>('/api/v1/catalog/relations'), fetchJson<{ topics: Topic[]; rules: Rule[]; synonyms: Synonym[] }>('/api/v1/knowledge/overview'),
       fetchJson<Metric[]>('/api/v1/knowledge/metrics'),
     ])
-    ready.value = r; bootstrap.value = b; summary.value = s; tables.value = t; relations.value = rel
+    ready.value = r; bootstrap.value = b; deepseekConfig.value = config; deepseekSelectedModel.value = config.model; summary.value = s; tables.value = t; relations.value = rel
     topics.value = knowledge.topics; rules.value = knowledge.rules; synonyms.value = knowledge.synonyms; metrics.value = m
     if (!tableDetail.value && t.length) await selectTable(t[0].id)
   } catch (cause) { error.value = cause instanceof Error ? cause.message : '无法读取数据底座' }
@@ -218,6 +271,50 @@ async function generateEquipmentDiagnosis() {
 function openEquipmentQuestion(question: string) {
   agentQuestion.value = question; agentResult.value = null; agentError.value = ''; activeView.value = 'agent'
 }
+async function generateProductionTrend() {
+  if (productionRunning.value) return
+  productionRunning.value = true; productionError.value = ''
+  try { productionTrend.value = await fetchJson<ProductionTrend>('/api/v1/agent/production/trend', { method: 'POST' }) }
+  catch (cause) { productionError.value = cause instanceof Error ? cause.message : '生产趋势分析失败' }
+  finally { productionRunning.value = false }
+}
+async function evaluateAlgorithms() {
+  if (algorithmRunning.value) return
+  algorithmRunning.value = true; algorithmError.value = ''
+  try { algorithmSuite.value = await fetchJson<AlgorithmSuite>('/api/v1/agent/algorithms/evaluate', { method: 'POST' }) }
+  catch (cause) { algorithmError.value = cause instanceof Error ? cause.message : '六算法验收失败' }
+  finally { algorithmRunning.value = false }
+}
+async function saveDeepseekConfig() {
+  const apiKey = deepseekApiKey.value.trim()
+  deepseekConfigError.value = ''; deepseekConfigMessage.value = ''
+  if (!deepseekConfig.value?.configured && apiKey.length < 12) { deepseekConfigError.value = '请输入完整的 DeepSeek API Key'; return }
+  if (apiKey && apiKey.length < 12) { deepseekConfigError.value = '请输入完整的 DeepSeek API Key，或留空沿用当前 Key'; return }
+  deepseekConfigSaving.value = true
+  try {
+    deepseekConfig.value = await fetchJson<DeepSeekConfigStatus>('/api/v1/system/deepseek/config', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ api_key: apiKey || null, model: deepseekSelectedModel.value, verify: true }),
+    })
+    deepseekApiKey.value = ''; showDeepseekApiKey.value = false
+    if (ready.value) ready.value.dependencies.deepseek = 'configured'
+    deepseekConfigMessage.value = `连接验证通过，当前 Agent 已切换至 ${deepseekConfig.value.model}。`
+  } catch (cause) { deepseekConfigError.value = cause instanceof Error ? cause.message : 'DeepSeek 配置失败' }
+  finally { deepseekConfigSaving.value = false }
+}
+async function clearDeepseekConfig() {
+  if (!deepseekConfig.value?.can_clear || deepseekConfigSaving.value) return
+  deepseekConfigSaving.value = true; deepseekConfigError.value = ''; deepseekConfigMessage.value = ''
+  try {
+    deepseekConfig.value = await fetchJson<DeepSeekConfigStatus>('/api/v1/system/deepseek/config', { method: 'DELETE' })
+    deepseekSelectedModel.value = deepseekConfig.value.model
+    if (ready.value) ready.value.dependencies.deepseek = deepseekConfig.value.configured ? 'configured' : 'not_configured'
+    deepseekConfigMessage.value = '页面临时 Key 已安全清除。'
+  } catch (cause) { deepseekConfigError.value = cause instanceof Error ? cause.message : '清除配置失败' }
+  finally { deepseekConfigSaving.value = false }
+}
+function openProductionQuestion(question: string) {
+  agentQuestion.value = question; agentResult.value = null; agentError.value = ''; activeView.value = 'agent'
+}
 onMounted(loadWorkspace)
 </script>
 
@@ -234,7 +331,9 @@ onMounted(loadWorkspace)
       <button :class="{ active: activeView === 'knowledge' }" @click="activeView = 'knowledge'">业务知识 <span>03</span></button>
       <button :class="{ active: activeView === 'quality' }" @click="activeView = 'quality'">质量驾驶舱 <span>04</span></button>
       <button :class="{ active: activeView === 'equipment' }" @click="activeView = 'equipment'">设备诊断 <span>05</span></button>
-      <button :class="{ active: activeView === 'agent' }" @click="activeView = 'agent'">智能问析 <span>06</span></button>
+      <button :class="{ active: activeView === 'production' }" @click="activeView = 'production'">生产趋势 <span>06</span></button>
+      <button :class="{ active: activeView === 'agent' }" @click="activeView = 'agent'">智能问析 <span>07</span></button>
+      <button :class="{ active: activeView === 'settings' }" @click="activeView = 'settings'">模型配置 <span>08</span></button>
       <div class="system-pill" :class="{ ready: systemReady }"><i></i>{{ systemReady ? 'SYSTEM READY' : 'CONNECTING' }}</div>
     </nav>
     <div v-if="error" class="error-banner">{{ error }} <button @click="loadWorkspace">重试</button></div>
@@ -243,7 +342,7 @@ onMounted(loadWorkspace)
     <template v-else>
       <section v-if="activeView === 'overview'" class="overview-view">
         <div class="hero-grid">
-          <article class="hero-copy"><p class="section-code">PHASE 05 / EQUIPMENT ANOMALY SPECIALIZATION</p><h2>在停机之前<br />发现<span>行为偏离</span></h2><p>审核 Recipe 将日粒度特征 SQL、Isolation Forest 与稳健偏离解释连成可复现算法链，再由 DeepSeek 形成有边界的设备诊断。</p><button class="primary-action" @click="activeView = 'equipment'">打开设备诊断 <b>→</b></button></article>
+          <article class="hero-copy"><p class="section-code">PHASE 06 / PRODUCTION TREND SPECIALIZATION</p><h2>把计划差距<br />变成<span>行动线索</span></h2><p>审核 Recipe 将末工序口径、计划达成率、七日线性趋势与 DeepSeek 简报连成可复现生产问析链。</p><button class="primary-action" @click="activeView = 'production'">打开生产趋势 <b>→</b></button></article>
           <article class="date-card"><span>DATASET ANCHOR</span><strong>{{ summary?.dataset_max_business_date }}</strong><p>所有“本月 / 最近 30 天”等相对时间均以此业务日期为准。</p></article>
         </div>
         <div class="stat-strip">
@@ -334,12 +433,17 @@ onMounted(loadWorkspace)
             <section class="quality-panel trend-panel">
               <header><div><p class="section-code">30-DAY YIELD SIGNAL</p><h3>每日良率走势</h3></div><span>30 POINTS</span></header>
               <div class="quality-trend">
+                <div class="chart-y-title">良率（%）</div>
+                <div class="chart-y-ticks"><span>{{ qualityTrendMax }}</span><span>{{ ((qualityTrendMax + qualityTrendMin) / 2).toFixed(1) }}</span><span>{{ qualityTrendMin }}</span></div>
                 <svg viewBox="0 0 800 260" preserveAspectRatio="none" role="img" aria-label="最近30天每日良率趋势">
                   <line v-for="y in [55, 137, 220]" :key="y" x1="45" :y1="y" x2="755" :y2="y" />
+                  <line class="axis-line" x1="45" y1="40" x2="45" y2="220" />
+                  <line class="axis-line" x1="45" y1="220" x2="755" y2="220" />
                   <polyline :points="qualityTrendPoints" />
                   <circle v-if="qualityBrief.charts.trend.length" cx="755" :cy="qualityTrendPoints.split(' ').at(-1)?.split(',')[1]" r="7" />
                 </svg>
                 <div class="trend-axis"><span>{{ qualityBrief.charts.trend[0]?.business_date.slice(5) }}</span><span>{{ qualityBrief.charts.trend.at(-1)?.business_date.slice(5) }}</span></div>
+                <div class="chart-x-title">业务日期（月-日）</div>
               </div>
               <div class="process-pulse"><span v-for="item in qualityBrief.charts.process" :key="item.process_name"><b>{{ item.yield_rate }}%</b>{{ item.process_name }}</span></div>
             </section>
@@ -392,7 +496,7 @@ onMounted(loadWorkspace)
 
           <div class="equipment-main-grid">
             <section class="equipment-panel fleet-panel"><header><div><p class="section-code">FLEET ANOMALY RANK</p><h3>九台设备扫描</h3></div><span>29 DAYS</span></header><div class="fleet-list"><article v-for="(item, index) in equipmentDiagnosis.ranking" :key="item.equipment_id" :class="{ hot: index === 0 }"><b>{{ String(index + 1).padStart(2, '0') }}</b><div><strong>{{ item.equipment_name }}</strong><span>{{ item.equipment_id }} · {{ item.equipment_type }}</span></div><i><em :style="{ width: `${item.max_anomaly_score}%` }"></em></i><small>{{ item.anomaly_days }} 异常日</small></article></div></section>
-            <section class="equipment-panel signal-panel"><header><div><p class="section-code">ANOMALY SIGNAL / TOP MACHINE</p><h3>{{ equipmentDiagnosis.assessment.top_equipment.equipment_name }} 时间信号</h3></div><span>IF SCORE</span></header><div class="signal-chart"><svg viewBox="0 0 800 260" preserveAspectRatio="none"><line v-for="y in [55, 137, 220]" :key="y" x1="45" :y1="y" x2="755" :y2="y" /><polyline :points="equipmentTimelinePoints" /><g v-for="(item, index) in equipmentDiagnosis.timeline" :key="item.business_date"><circle v-if="item.is_anomaly" :cx="equipmentPointX(index)" :cy="equipmentPointY(item.anomaly_score)" r="6" /></g></svg><div><span>{{ equipmentDiagnosis.timeline[0]?.business_date.slice(5) }}</span><b>异常阈值由训练基线确定</b><span>{{ equipmentDiagnosis.timeline.at(-1)?.business_date.slice(5) }}</span></div></div><footer><span>停机累计 <b>{{ formatNumber(equipmentDiagnosis.assessment.top_equipment.total_downtime_minutes) }} min</b></span><span>报警事件 <b>{{ equipmentDiagnosis.assessment.top_equipment.alarm_count }} 次</b></span></footer></section>
+            <section class="equipment-panel signal-panel"><header><div><p class="section-code">ANOMALY SIGNAL / TOP MACHINE</p><h3>{{ equipmentDiagnosis.assessment.top_equipment.equipment_name }} 时间信号</h3></div><span>IF SCORE</span></header><div class="signal-chart"><div class="chart-y-title">异常评分</div><div class="chart-y-ticks"><span>100</span><span>50</span><span>0</span></div><svg viewBox="0 0 800 260" preserveAspectRatio="none"><line v-for="y in [55, 137, 220]" :key="y" x1="45" :y1="y" x2="755" :y2="y" /><line class="axis-line" x1="45" y1="40" x2="45" y2="220" /><line class="axis-line" x1="45" y1="220" x2="755" y2="220" /><polyline :points="equipmentTimelinePoints" /><g v-for="(item, index) in equipmentDiagnosis.timeline" :key="item.business_date"><circle v-if="item.is_anomaly" :cx="equipmentPointX(index)" :cy="equipmentPointY(item.anomaly_score)" r="6" /></g></svg><div class="chart-date-axis"><span>{{ equipmentDiagnosis.timeline[0]?.business_date.slice(5) }}</span><b>异常阈值由训练基线确定</b><span>{{ equipmentDiagnosis.timeline.at(-1)?.business_date.slice(5) }}</span></div><div class="chart-x-title">业务日期（月-日）</div></div><footer><span>停机累计 <b>{{ formatNumber(equipmentDiagnosis.assessment.top_equipment.total_downtime_minutes) }} min</b></span><span>报警事件 <b>{{ equipmentDiagnosis.assessment.top_equipment.alarm_count }} 次</b></span></footer></section>
           </div>
 
           <section class="deviation-section"><header><div><p class="section-code">ROBUST DEVIATION EXPLANATION</p><h3>它为什么被判为异常</h3></div><p>当前最高异常日相对该设备历史中位数 / IQR，不代表因果根因。</p></header><div class="deviation-grid"><article v-for="(item, index) in equipmentDiagnosis.deviations" :key="item.feature"><span>0{{ index + 1 }} · {{ item.feature }}</span><h4>{{ item.label }}</h4><div><b>{{ item.current }}</b><i><em :style="{ width: `${100 * Math.abs(item.robust_deviation) / equipmentDeviationMax}%` }"></em></i><small>基线 {{ item.baseline_median }}</small></div><footer><strong>{{ item.robust_deviation > 0 ? '+' : '' }}{{ item.robust_deviation }} IQR</strong><span v-if="item.change_pct !== null">{{ item.change_pct > 0 ? '+' : '' }}{{ item.change_pct }}%</span><span v-else>基线为 0</span></footer></article></div></section>
@@ -406,10 +510,49 @@ onMounted(loadWorkspace)
         </template>
       </section>
 
+      <section v-if="activeView === 'production'" class="production-view">
+        <header class="production-hero">
+          <div class="production-intro">
+            <p class="section-code">PHASE 06 / PRODUCTION CONTROL DESK</p>
+            <h2>看清达成，<br /><span>盯住趋势</span></h2>
+            <p>从末工序完工口径出发，按产线与业务日聚合实际和计划，再用最近七日线性斜率描述短期方向。所有数字可回到 SQL、Recipe 和 LangGraph 节点。</p>
+            <button class="production-run" :disabled="productionRunning" @click="generateProductionTrend"><span v-if="productionRunning" class="button-spinner"></span>{{ productionRunning ? '正在计算生产趋势' : productionTrend ? '重新运行生产问析' : '运行生产趋势问析' }} <b>↗</b></button>
+          </div>
+          <div class="production-poster" aria-hidden="true"><span>7D</span><svg viewBox="0 0 280 100"><polyline points="0,76 42,59 84,64 126,40 168,45 210,22 280,10" /></svg><small>LINEAR SLOPE<br />NOT A FORECAST</small></div>
+        </header>
+
+        <div class="production-query-strip"><span>SQL 下钻</span><button @click="openProductionQuestion('本月各产线完工产量排名')"><b>01</b> 完工产量 <i>→</i></button><button @click="openProductionQuestion('本月各产线计划达成率')"><b>02</b> 计划达成 <i>→</i></button><button @click="openProductionQuestion('最近30天每日完工产量趋势')"><b>03</b> 每日趋势 <i>→</i></button></div>
+        <div v-if="productionError" class="agent-error"><strong>生产趋势未完成</strong><p>{{ productionError }}</p><button @click="generateProductionTrend">重新运行</button></div>
+        <div v-if="productionRunning" class="production-loading"><div class="production-loader"><i v-for="n in 7" :key="n" :style="{ height: `${24 + n * 8}px` }"></i></div><div><p class="section-code">PRODUCTION RECIPE IS RUNNING</p><h3>正在核对口径并拟合七日斜率</h3><p>RAG Evidence → Safe SQL → LinearRegression → Plan Assessment → DeepSeek Brief</p></div></div>
+        <section v-else-if="!productionTrend" class="production-empty"><div class="trend-index"><b>95.86</b><span>KNOWN KPI / CALCULATED LIVE</span></div><div><p class="section-code">AUDITABLE PRODUCTION WORKFLOW</p><h3>一次运行，回答“完成多少、差在哪里、方向怎样”</h3><p>页面不会读取预设结论。计划达成率和七日斜率均在运行时从末工序事实表计算。</p></div></section>
+
+        <template v-if="productionTrend && !productionRunning">
+          <section class="production-kpis">
+            <article><span>FINAL OUTPUT</span><strong>{{ formatNumber(productionTrend.assessment.final_output) }}<small> 件</small></strong><p>本月末工序完工量</p></article>
+            <article><span>PLAN ATTAINMENT</span><strong>{{ productionTrend.assessment.plan_attainment }}<small>%</small></strong><p>{{ formatNumber(productionTrend.assessment.planned_qty) }} 件计划</p></article>
+            <article><span>BEST LINE</span><strong>{{ productionTrend.assessment.best_line.line_id }}</strong><p>{{ productionTrend.assessment.best_line.plan_attainment }}% · {{ productionTrend.assessment.best_line.line_name }}</p></article>
+            <article class="attention"><span>ATTENTION LINE</span><strong>{{ productionTrend.assessment.attention_line.line_id }}</strong><p>{{ productionTrend.assessment.attention_line.plan_attainment }}% · {{ productionTrend.assessment.attention_line.slope_per_day }} 件/日</p></article>
+          </section>
+
+          <div class="production-main-grid">
+            <section class="production-panel"><header><div><p class="section-code">LINE ATTAINMENT / 2025-12</p><h3>产线计划达成排名</h3></div><span>FINAL PROCESS</span></header><div class="line-rank"><article v-for="(item,index) in productionTrend.ranking" :key="item.line_id" :class="{ weak: item.line_id === productionTrend.assessment.attention_line.line_id }"><b>0{{ index + 1 }}</b><div><strong>{{ item.line_name }}</strong><span>{{ formatNumber(item.final_output) }} / {{ formatNumber(item.planned_qty) }} 件</span></div><i><em :style="{ width: `${item.plan_attainment}%` }"></em></i><small>{{ item.plan_attainment }}%</small></article></div></section>
+            <section class="production-panel"><header><div><p class="section-code">DAILY FINAL OUTPUT</p><h3>29 日完工量走势</h3></div><span>REAL SQL RESULT</span></header><div class="production-chart"><div class="chart-y-title">完工产量（件）</div><div class="chart-y-ticks"><span>{{ formatNumber(productionTrendMax) }}</span><span>{{ formatNumber(productionTrendMid) }}</span><span>{{ formatNumber(productionTrendMin) }}</span></div><svg viewBox="0 0 800 260" preserveAspectRatio="none"><line v-for="y in [55,137,220]" :key="y" x1="45" :y1="y" x2="755" :y2="y" /><line class="axis-line" x1="45" y1="40" x2="45" y2="220" /><line class="axis-line" x1="45" y1="220" x2="755" y2="220" /><polyline :points="productionTrendPoints" /><circle v-for="(item,index) in productionTrend.daily_trend" :key="item.business_date" :cx="productionPointX(index)" :cy="productionPointY(item.final_output)" r="3" /></svg><div class="chart-date-axis"><span>{{ productionTrend.daily_trend[0]?.business_date.slice(5) }}</span><b>只统计 is_final_process = true</b><span>{{ productionTrend.daily_trend.at(-1)?.business_date.slice(5) }}</span></div><div class="chart-x-title">业务日期（月-日）</div></div></section>
+          </div>
+
+          <section class="slope-section"><header><div><p class="section-code">7-DAY LINEAR SLOPE</p><h3>三条产线短期方向</h3></div><p>{{ productionTrend.assessment.trend_disclaimer }}</p></header><div><article v-for="item in productionTrend.ranking" :key="item.line_id"><span>{{ item.line_id }} · {{ item.line_name }}</span><strong :class="{ down: item.slope_per_day < 0 }">{{ item.slope_per_day > 0 ? '+' : '' }}{{ item.slope_per_day }} <small>件/日</small></strong><i><em :style="{ width: `${100 * Math.abs(item.slope_per_day) / productionSlopeMax}%` }"></em></i><p>{{ item.direction }} · {{ productionTrend.period.trend_window }}</p></article></div></section>
+
+          <div class="production-insight-grid"><section class="production-brief"><header><p class="section-code">DEEPSEEK OPERATIONS BRIEF</p><span>{{ productionTrend.brief.generation_mode.toUpperCase() }}</span></header><h3>{{ productionTrend.brief.headline }}</h3><p>{{ productionTrend.brief.summary }}</p><div><article><b>数据观察</b><ul><li v-for="item in productionTrend.brief.observations" :key="item">{{ item }}</li></ul></article><article><b>建议动作</b><ul><li v-for="item in productionTrend.brief.actions" :key="item">{{ item }}</li></ul></article></div></section><section class="production-trace"><p class="section-code">LANGGRAPH / 5 NODES</p><div v-for="(step,index) in productionTrend.trace" :key="step.node_name"><b>0{{ index + 1 }}</b><span><strong>{{ step.display_name }}</strong>{{ step.summary }}</span><small>{{ formatDuration(step.duration_ms) }}</small></div><footer><code>{{ productionTrend.run_id }}</code><span>{{ formatDuration(productionTrend.duration_ms) }}</span></footer></section></div>
+
+          <section class="production-proof"><div><p class="section-code">RECIPE + RAG EVIDENCE</p><h3>{{ productionTrend.recipe.name }}</h3><p>{{ productionTrend.recipe.explanation_rule }}</p><span v-for="metric in productionTrend.evidence.metrics" :key="metric.code"><b>{{ metric.name }} · v{{ metric.version }}</b><code>{{ metric.formula }}</code></span><details><summary>查看审核 Feature SQL</summary><pre>{{ productionTrend.recipe.feature_sql }}</pre></details></div><aside><span>ALGORITHM</span><strong>{{ productionTrend.recipe.algorithm }}</strong><p>mode / {{ productionTrend.recipe.parameters.mode }}</p><p>fit window / {{ productionTrend.recipe.parameters.fit_days }} days</p><p>SQL tables / {{ productionTrend.evidence.tables.length }}</p></aside></section>
+        </template>
+
+        <section class="algorithm-lab"><header><div><p class="section-code">SIX REVIEWED ALGORITHM RECIPES</p><h3>算法能力验收台</h3><p>同一套真实制造数据、固定参数与时间留出；不提供任意代码执行入口。</p></div><button :disabled="algorithmRunning" @click="evaluateAlgorithms"><span v-if="algorithmRunning" class="button-spinner"></span>{{ algorithmRunning ? '六算法执行中' : algorithmSuite ? '重新执行六算法' : '执行六算法验收' }} <b>→</b></button></header><div v-if="algorithmError" class="agent-error"><strong>算法验收未完成</strong><p>{{ algorithmError }}</p></div><div v-if="algorithmSuite" class="algorithm-grid"><article v-for="(item,index) in algorithmSuite.algorithms" :key="item.algorithm"><span>0{{ index + 1 }} / {{ item.scene.toUpperCase() }}</span><h4>{{ item.algorithm }}</h4><p>{{ item.use_case }}</p><strong>{{ algorithmMetric(item.metrics) }}</strong><footer>{{ formatNumber(item.rows.training) }} TRAIN · {{ formatNumber(item.rows.validation) }} VALID</footer></article></div><footer v-if="algorithmSuite"><span>{{ algorithmSuite.passed_count }}/{{ algorithmSuite.algorithm_count }} RECIPES PASSED</span><code>{{ algorithmSuite.guardrail }}</code><b>{{ formatDuration(algorithmSuite.duration_ms) }}</b></footer></section>
+      </section>
+
       <section v-if="activeView === 'agent'" class="agent-view">
         <header class="agent-hero">
           <div>
-            <p class="section-code">PHASE 05 / RAG + SQL + ALGORITHM RECIPES</p>
+            <p class="section-code">PHASE 06 / RAG + SQL + SIX ALGORITHM RECIPES</p>
             <h2>一句话，<span>走完分析链路</span></h2>
             <p>不是聊天演示：问题经过业务理解、证据检索、DeepSeek Text-to-SQL、安全校验与只读执行，最后生成图表和可追溯结论。</p>
           </div>
@@ -483,7 +626,11 @@ onMounted(loadWorkspace)
             <header><div><p class="section-code">EXECUTED RESULT / NOT MOCKED</p><h3>{{ agentResult.chart.title }}</h3></div><div class="date-range">{{ agentResult.time_range.start }}<b>→</b>{{ agentResult.time_range.end }}</div></header>
             <div class="result-grid">
               <div class="yield-chart" role="img" :aria-label="agentResult.chart.title">
+                <div class="chart-y-title">{{ columnLabel(agentResult.chart.y_field) }}{{ agentResult.chart.unit ? `（${agentResult.chart.unit}）` : '' }}</div>
                 <div class="chart-scale"><span>{{ chartCeiling }}{{ agentResult.chart.unit }}</span><span>{{ ((chartCeiling + chartBaseline) / 2).toFixed(1) }}{{ agentResult.chart.unit }}</span><span>{{ chartBaseline }}{{ agentResult.chart.unit }}</span></div>
+                <div v-if="agentResult.chart.type === 'pareto'" class="chart-y-title chart-y-title-right">累计占比（%）</div>
+                <div v-if="agentResult.chart.type === 'pareto'" class="chart-scale chart-scale-right"><span>100%</span><span>50%</span><span>0%</span></div>
+                <template v-if="agentResult.chart.type !== 'line'"><i class="plot-axis plot-axis-y"></i><i class="plot-axis plot-axis-x"></i></template>
                 <template v-if="agentResult.chart.type === 'bar'">
                   <div v-for="(category, index) in agentResult.chart.categories" :key="category" class="bar-column">
                     <strong>{{ agentResult.chart.series[0].data[index] }}{{ agentResult.chart.unit }}</strong>
@@ -497,9 +644,12 @@ onMounted(loadWorkspace)
                 </div>
                 <svg v-else class="line-plot" viewBox="0 0 800 280" preserveAspectRatio="none" aria-hidden="true">
                   <line v-for="y in [45, 140, 235]" :key="y" x1="55" :y1="y" x2="745" :y2="y" />
+                  <line class="axis-line" x1="55" y1="35" x2="55" y2="235" />
+                  <line class="axis-line" x1="55" y1="235" x2="745" y2="235" />
                   <polyline :points="linePoints" />
                   <g v-for="(value, index) in agentResult.chart.series[0].data" :key="index"><circle :cx="lineX(index)" :cy="lineY(value)" r="6" /><text :x="lineX(index)" :y="lineY(value) - 13">{{ value }}</text><text class="axis-label" :x="lineX(index)" y="262">{{ agentResult.chart.categories[index].slice(5) }}</text></g>
                 </svg>
+                <div class="chart-x-title">{{ columnLabel(agentResult.chart.x_field) }}</div>
               </div>
               <div class="result-table-wrap">
                 <table><thead><tr><th v-for="column in agentResult.result.columns" :key="column">{{ columnLabel(column) }}</th></tr></thead><tbody><tr v-for="(row, rowIndex) in agentResult.result.rows" :key="rowIndex"><td v-for="column in agentResult.result.columns" :key="column"><b v-if="column === agentResult.chart.y_field">{{ formatCell(row[column], column) }}</b><template v-else>{{ formatCell(row[column], column) }}</template></td></tr></tbody></table>
@@ -510,6 +660,40 @@ onMounted(loadWorkspace)
 
           <section class="answer-card"><span>AGENT CONCLUSION</span><div class="quote-mark">“</div><p>{{ agentResult.answer }}</p><footer>结论基于检验数据与已发布指标口径 <b>·</b> 不推断未提供的根因</footer></section>
         </template>
+      </section>
+
+      <section v-if="activeView === 'settings'" class="model-settings-view">
+        <header class="settings-hero">
+          <div><p class="section-code">LOCAL MODEL CREDENTIAL / RUNTIME ONLY</p><h2>把模型连接<br /><span>留在本机</span></h2><p>比赛现场可直接配置 DeepSeek。密钥只进入后端进程内存，不写数据库、不回显、不进入 Git；Docker 重启后自动清除。</p></div>
+          <aside :class="{ configured: deepseekConfig?.configured }"><i></i><span>DEEPSEEK STATUS</span><strong>{{ deepseekConfig?.configured ? 'READY' : 'SETUP' }}</strong><small>{{ deepseekConfig?.configured ? '模型通道可用' : '等待 API Key' }}</small></aside>
+        </header>
+
+        <div class="settings-layout">
+          <form class="credential-card" @submit.prevent="saveDeepseekConfig">
+            <header><div><p class="section-code">SECURE INPUT + MODEL ROUTE</p><h3>DeepSeek 运行配置</h3></div><span>不持久化</span></header>
+            <fieldset class="model-selector">
+              <legend>选择推理模型 <small>MODEL ROUTE</small></legend>
+              <div class="model-options"><label v-for="model in deepseekModels" :key="model.id" :class="{ active: deepseekSelectedModel === model.id }"><input v-model="deepseekSelectedModel" type="radio" name="deepseek-model" :value="model.id" /><span><b>{{ model.name }}</b><small>{{ model.tag }}</small><code>{{ model.id }}</code><em>{{ model.description }}</em></span><i>✓</i></label></div>
+              <p>模型和 Key 同属运行时配置；切换模型后会重新执行连接验证。</p>
+            </fieldset>
+            <label class="secret-field">
+              <span>API KEY</span>
+              <div><input v-model="deepseekApiKey" :type="showDeepseekApiKey ? 'text' : 'password'" autocomplete="off" spellcheck="false" placeholder="sk-••••••••••••••••" aria-label="DeepSeek API Key" /><button type="button" @click="showDeepseekApiKey = !showDeepseekApiKey">{{ showDeepseekApiKey ? '隐藏' : '显示' }}</button></div>
+              <small>{{ deepseekConfig?.configured ? '留空可沿用当前内存 Key；填写新 Key 则同时替换。' : '首次配置必须填写 Key。' }}提交后输入框立即清空，服务器响应不会包含密钥或其片段。</small>
+            </label>
+            <div v-if="deepseekConfigError" class="config-feedback error">{{ deepseekConfigError }}</div>
+            <div v-if="deepseekConfigMessage" class="config-feedback success">{{ deepseekConfigMessage }}</div>
+            <footer><button class="config-save" type="submit" :disabled="deepseekConfigSaving">{{ deepseekConfigSaving ? '正在验证连接…' : '保存并验证连接 →' }}</button><button v-if="deepseekConfig?.can_clear" class="config-clear" type="button" :disabled="deepseekConfigSaving" @click="clearDeepseekConfig">清除页面配置</button></footer>
+          </form>
+
+          <section class="connection-card">
+            <header><p class="section-code">CONNECTION PROFILE</p><span :class="{ on: deepseekConfig?.configured }"><i></i>{{ deepseekConfig?.configured ? 'CONFIGURED' : 'NOT CONFIGURED' }}</span></header>
+            <dl><div><dt>配置来源</dt><dd>{{ deepseekSourceLabel }}</dd></div><div><dt>模型</dt><dd><code>{{ deepseekConfig?.model }}</code></dd></div><div><dt>接口地址</dt><dd><code>{{ deepseekConfig?.base_url }}</code></dd></div><div><dt>推理强度</dt><dd>{{ deepseekConfig?.reasoning_effort?.toUpperCase() }}</dd></div></dl>
+            <div class="security-note"><b>安全边界</b><p>该入口仅适用于本地比赛演示。若部署到公网，应关闭此入口并使用服务端 Secret 管理与 HTTPS。</p></div>
+          </section>
+        </div>
+
+        <section class="config-flow"><p class="section-code">WHAT HAPPENS AFTER SUBMIT</p><div><article><b>01</b><span><strong>浏览器提交</strong>仅发送到本机 `/api`</span></article><article><b>02</b><span><strong>后端内存保存</strong>不进入数据库和日志</span></article><article><b>03</b><span><strong>连接探测</strong>调用 DeepSeek 验证有效性</span></article><article><b>04</b><span><strong>Agent 即时启用</strong>LangGraph 读取当前 Key</span></article></div></section>
       </section>
     </template>
 

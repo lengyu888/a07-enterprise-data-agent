@@ -3,14 +3,18 @@ from pydantic import BaseModel, Field
 
 from app.agent.service import (
     AgentRunError,
+    algorithm_recipes,
     capabilities,
     list_recent_runs,
+    run_algorithm_evaluation,
     run_equipment_diagnosis,
     run_quality_analysis,
     run_quality_brief,
+    run_production_trend,
     stage3_evaluation_summary,
     stage4_evaluation_summary,
     stage5_evaluation_summary,
+    stage6_evaluation_summary,
 )
 
 
@@ -60,6 +64,32 @@ def create_equipment_diagnosis() -> dict[str, object]:
 @router.get("/evaluation/stage5")
 def stage5_evaluation() -> dict[str, object]:
     return stage5_evaluation_summary()
+
+
+@router.post("/production/trend")
+def create_production_trend() -> dict[str, object]:
+    try:
+        return run_production_trend()
+    except AgentRunError as exc:
+        raise HTTPException(status_code=502, detail={"message": str(exc), "run_id": exc.run_id}) from exc
+
+
+@router.get("/algorithms")
+def get_algorithm_recipes() -> dict[str, object]:
+    return algorithm_recipes()
+
+
+@router.post("/algorithms/evaluate")
+def evaluate_algorithms() -> dict[str, object]:
+    try:
+        return run_algorithm_evaluation()
+    except AgentRunError as exc:
+        raise HTTPException(status_code=502, detail={"message": str(exc), "run_id": exc.run_id}) from exc
+
+
+@router.get("/evaluation/stage6")
+def stage6_evaluation() -> dict[str, object]:
+    return stage6_evaluation_summary()
 
 
 @router.post("/runs")

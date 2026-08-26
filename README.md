@@ -6,7 +6,7 @@
 
 ## 当前阶段
 
-阶段 5：设备异常专项（Docker 本地测试候选版，等待用户确认）。
+阶段 6：生产趋势与六算法（Docker 本地测试候选版，等待用户确认）。
 
 - Vue 3 Web 工作台；
 - FastAPI 模块化单体；
@@ -16,7 +16,7 @@
 - PostgreSQL 表/字段/注释/样例/外键自动扫描与关系图；
 - 业务主题、对象、指标、规则、同义词，以及指标口径 CRUD；
 - DeepSeek 服务端适配器；
-- LangGraph 八节点通用问析链路与四节点质量简报链路；
+- LangGraph 八节点通用问析、四节点质量简报，以及设备/生产五节点专项链路；
 - 业务口径、强规则、Schema 与真实 Join 关系的精确证据检索；
 - DeepSeek Text-to-SQL 与结构化输出契约；
 - SQLGlot 单条只读 SQL、表白名单、语义字段、限行与时间边界校验；
@@ -33,11 +33,16 @@
 - 本地 Isolation Forest 设备异常检测，固定算法参数与随机种子；
 - 历史中位数/IQR 特征偏离解释、九台设备排名和异常时间信号；
 - 设备事件原因核查线索与 DeepSeek 可靠性诊断简报；
+- 末工序完工量、计划达成率、29 日生产走势与产线排名；
+- 最近七日 LinearRegression 斜率，严格标注为趋势描述而非未来预测；
+- DeepSeek 生产运营简报、审核 Feature SQL、RAG 证据与节点轨迹；
+- LinearRegression、LogisticRegression、DecisionTree、RandomForest、KMeans、IsolationForest 六个审核 Recipe；
+- 六算法统一时间切分、固定随机种子、真实样本量和验收指标；
 - SQL 校验/执行失败后最多两次 DeepSeek 修复回路；
 - 柱状图、折线图、动态结果列与前端 RAG 检索台账；
 - Docker Compose 本地构建、健康检查与验收脚本。
 
-当前支持 20 个问析问题。质量和设备场景已完成专项扩展；生产预测将在下一阶段实现。
+当前支持 20 个通用问析问题，质量、设备、生产三个场景均已形成专项闭环。比赛版不建设完整 MLOps，也不把七日趋势斜率包装为产量预测。
 
 ## 本地启动
 
@@ -50,7 +55,7 @@
 2. 构建并启动。
 
    ```powershell
-   docker compose -f compose.yml -f compose.deepseek.yml up --build -d
+   docker compose up --build -d
    ```
 
 3. 查看容器状态。
@@ -64,7 +69,7 @@
 5. 执行当前阶段冒烟测试。
 
    ```powershell
-   powershell -ExecutionPolicy Bypass -File .\scripts\test-stage5.ps1
+   powershell -ExecutionPolicy Bypass -File .\scripts\test-stage6.ps1
    ```
 
 6. 停止服务。
@@ -77,22 +82,19 @@
 
 ## DeepSeek 配置
 
-真实 API Key 不进入 Compose 环境变量，也不写入 `.env`。如需调用 DeepSeek，创建被 Git 忽略的 Secret 文件：
+### 唯一配置方式：前端运行时配置
 
-```powershell
-New-Item -ItemType Directory -Force .secrets
-Set-Content -NoNewline .secrets\deepseek_api_key 'your_key'
-```
+打开 <http://localhost:8080>，进入“模型配置 08”，填入 API Key 后点击“保存并验证连接”。Key 仅保存在 FastAPI 进程内存中，不写数据库、不回显、不进入 Git，Docker 重启后自动清除。
 
-然后用 Secret 覆盖文件启动：
+- `GET /api/v1/system/deepseek/config`：返回脱敏配置状态；
+- `PUT /api/v1/system/deepseek/config`：设置并验证运行时 Key 与模型；
+- `DELETE /api/v1/system/deepseek/config`：清除页面运行时 Key。
 
-```powershell
-docker compose -f compose.yml -f compose.deepseek.yml up --build -d
-```
+页面提供 `deepseek-v4-pro` 与 `deepseek-v4-flash` 两个当前有效模型。首次配置必须填写 Key；后续切换模型时可以留空沿用当前内存 Key。已弃用的 `deepseek-chat`、`deepseek-reasoner` 不进入选择列表。
 
-`/api/v1/system/deepseek/probe` 可验证用户提供的 OpenAI SDK 兼容调用方式。未配置 Secret 不影响基础三容器验收。不要运行会展开环境变量值的配置命令并把输出粘贴到公开日志。
+系统不再读取 DeepSeek 环境变量、`.env` 或 Docker Secret。容器重启后必须在页面重新填写 Key。`/api/v1/system/deepseek/probe` 可单独验证 OpenAI SDK 兼容调用。
 
-## 阶段 5 Agent / RAG / Algorithm API
+## 阶段 6 Agent / RAG / Algorithm API
 
 - `GET /api/v1/agent/capabilities`：MVP 场景、问题与八节点链路边界；
 - `POST /api/v1/agent/runs`：执行真实质量问析；
@@ -101,6 +103,10 @@ docker compose -f compose.yml -f compose.deepseek.yml up --build -d
 - `GET /api/v1/agent/evaluation/stage4`：质量场景连续成功门槛；
 - `POST /api/v1/agent/equipment/diagnosis`：运行设备异常 Recipe 与五节点 LangGraph；
 - `GET /api/v1/agent/evaluation/stage5`：设备算法连续成功门槛；
+- `POST /api/v1/agent/production/trend`：运行生产趋势 Recipe 与五节点 LangGraph；
+- `GET /api/v1/agent/algorithms`：查看六个已发布算法 Recipe；
+- `POST /api/v1/agent/algorithms/evaluate`：执行六算法统一工程验收；
+- `GET /api/v1/agent/evaluation/stage6`：生产连续成功与六算法验收门槛；
 - `GET /api/v1/rag/status`：向量模型、索引类型与证据数量；
 - `POST /api/v1/rag/search`：返回三路融合后的 EvidenceBundle；
 - `POST /api/v1/rag/reindex`：增量重建知识索引。

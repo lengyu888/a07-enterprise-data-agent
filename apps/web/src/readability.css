@@ -1,0 +1,216 @@
+/* Readability pass: preserve the approved visual language while raising the information floor. */
+:root {
+  --font-latin: "Bahnschrift", "Aptos", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --font-code: "Cascadia Mono", "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 16px;
+}
+
+.eyebrow,
+.section-code,
+.phase-stamp span,
+.view-nav button span,
+.system-pill,
+.date-card span,
+.stat-strip small,
+.topic-grid article>span,
+.next-band>span,
+.quality-seal small,
+.quality-seal span,
+.quality-question-strip>span,
+.equipment-query-strip>span,
+.production-query-strip>span,
+.agent-badge span,
+.run-summary span,
+.rag-channel>span,
+.rag-reduction>span,
+.trace-section>header>span,
+.sql-card>header>span,
+.answer-card>span,
+.production-kpis span,
+.algorithm-grid article>span {
+  font-family: var(--font-latin);
+  font-size: .72rem;
+  font-weight: 750;
+  letter-spacing: .09em;
+}
+
+code,
+pre,
+kbd,
+.metric-list article>code,
+.recipe-proof pre,
+.production-proof pre,
+.sql-card pre,
+.run-summary>code,
+.production-trace>footer,
+.equipment-trace>footer,
+.model-ticket code,
+.chart-scale,
+.chart-y-ticks,
+.trend-axis,
+.chart-date-axis,
+.chart-x-title,
+.chart-y-title {
+  font-family: var(--font-code);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Evidence and SQL areas shown in the user's screenshot. */
+.metric-proof>span,
+.rule-proof>span { font-size: .74rem; }
+.metric-proof code { font-size: .82rem; line-height: 1.65; }
+.rule-proof p { font-size: .88rem; line-height: 1.75; }
+.table-proof span { font-size: .75rem; }
+.join-proof { font-size: .74rem; line-height: 1.6; }
+.join-proof b { font-family: var(--font-latin); font-size: .67rem; }
+.source-proof>span { grid-template-columns: 74px 1fr auto; min-height: 42px; font-size: .73rem; line-height: 1.45; }
+.source-proof b { font-family: var(--font-latin); font-size: .64rem; }
+.source-proof small { font-size: .68rem; }
+.sql-card>header>span { font-size: .68rem; }
+.sql-card pre { font-size: .82rem; line-height: 1.78; }
+.sql-card footer span { font-family: var(--font-latin); font-size: .66rem; }
+
+/* Agent ledger and trace labels. */
+.query-console label>span { font-size: .76rem; }
+.example-switcher>span { font-family: var(--font-latin); font-size: .68rem; }
+.example-switcher small { font-family: var(--font-latin); font-size: .64rem; }
+.run-summary span { font-size: .68rem; }
+.run-summary>code { font-size: .72rem; }
+.rag-title>span { font-size: .7rem; }
+.rag-channel small,.rag-reduction small { font-size: .7rem; }
+.trace-rail article>div:nth-child(2)>span { font-family: var(--font-latin); font-size: .66rem; }
+.trace-rail p { font-size: .82rem; }
+.trace-rail time { font-size: .68rem; }
+.result-table-wrap th { font-size: .72rem; }
+.result-table-wrap>p { font-size: .7rem; }
+.answer-card footer { font-size: .78rem; }
+
+/* Quality and equipment secondary information. */
+.quality-panel>header>span,
+.quality-brief-card>header>span,
+.equipment-panel>header>span,
+.equipment-brief>header span { font-family: var(--font-latin); font-size: .68rem; }
+.pareto-item>small { font-size: .7rem; }
+.quality-brief-card>footer { font-size: .74rem; }
+.quality-proof article { font-size: .76rem; }
+.quality-proof article small { font-size: .68rem; }
+.equipment-alert-band span { font-size: .7rem; }
+.equipment-alert-band p { font-size: .76rem; }
+.fleet-list article>div span,.fleet-list article small { font-size: .68rem; }
+.deviation-grid article>span { font-family: var(--font-latin); font-size: .66rem; }
+.deviation-grid footer { font-size: .7rem; }
+.reason-card article span,.reason-card article b { font-size: .76rem; }
+.reason-card>footer { font-size: .74rem; }
+.equipment-brief article>b,.equipment-brief ul { font-size: .76rem; }
+.recipe-proof>div span { font-size: .7rem; }
+.recipe-proof>p:not(.section-code) { font-size: .8rem; }
+.recipe-proof pre { font-size: .72rem; line-height: 1.65; }
+.equipment-trace>div>span { font-size: .72rem; }
+.equipment-trace>div>b,.equipment-trace>div small { font-size: .66rem; }
+.equipment-trace>footer { font-size: .68rem; }
+
+/* Production and algorithm lab secondary information. */
+.production-poster small { font-family: var(--font-latin); font-size: .72rem; }
+.trend-index span { font-family: var(--font-latin); font-size: .66rem; }
+.production-kpis p { font-size: .76rem; }
+.production-panel>header>span { font-family: var(--font-latin); font-size: .68rem; }
+.line-rank article>b { font-size: .68rem; }
+.line-rank article>div span { font-size: .7rem; }
+.line-rank article>small { font-size: .76rem; }
+.slope-section>header>p,.slope-section article>span,.slope-section article>p { font-size: .74rem; }
+.production-brief article>b,.production-brief ul { font-size: .76rem; }
+.production-trace>div>span { font-size: .72rem; }
+.production-trace>div>b,.production-trace>div small { font-size: .66rem; }
+.production-trace>footer { font-size: .68rem; }
+.production-proof>div>span { font-size: .72rem; }
+.production-proof pre { font-size: .72rem; line-height: 1.65; }
+.production-proof>aside span,.production-proof>aside p { font-family: var(--font-latin); font-size: .68rem; }
+.algorithm-grid p { font-size: .74rem; }
+.algorithm-grid article>strong { font-size: .7rem; line-height: 1.6; }
+.algorithm-grid article>footer { font-size: .67rem; }
+.algorithm-lab>footer { font-size: .68rem; }
+
+/* Shared axis system. */
+.quality-trend,
+.signal-chart,
+.production-chart {
+  position: relative;
+  padding: 44px 24px 34px 72px;
+}
+.quality-trend svg,
+.signal-chart svg,
+.production-chart svg { display: block; }
+.quality-trend .axis-line,
+.signal-chart .axis-line,
+.production-chart .axis-line,
+.line-plot .axis-line { stroke: var(--ink); stroke-width: 2; }
+.chart-y-title {
+  position: absolute;
+  z-index: 2;
+  top: 14px;
+  left: 14px;
+  color: var(--ink);
+  font-size: .72rem;
+  font-weight: 800;
+}
+.chart-y-ticks {
+  position: absolute;
+  z-index: 2;
+  top: 89px;
+  bottom: 79px;
+  left: 15px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 48px;
+  color: var(--muted);
+  text-align: right;
+  font-size: .7rem;
+}
+.trend-axis,
+.chart-date-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 1px 0;
+  color: var(--muted);
+  font-size: .7rem;
+}
+.chart-date-axis b { color: var(--blue-dark); font-family: var(--font-body); text-align: center; }
+.chart-x-title {
+  color: var(--ink);
+  text-align: center;
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+
+/* Generated bar, line and Pareto result charts. */
+.yield-chart { padding: 72px 64px 62px 86px; }
+.yield-chart>.chart-y-title { top: 18px; left: 18px; }
+.yield-chart>.chart-y-title-right { right: 15px; left: auto; color: var(--blue-dark); }
+.chart-scale { inset: 62px auto 83px 20px; min-width: 54px; text-align: right; font-size: .7rem; }
+.chart-scale-right { right: 13px; left: auto; color: var(--blue-dark); text-align: left; }
+.plot-axis { position: absolute; z-index: 0; display: block; background: var(--ink); pointer-events: none; }
+.plot-axis-y { top: 62px; bottom: 82px; left: 73px; width: 2px; }
+.plot-axis-x { right: 47px; bottom: 81px; left: 73px; height: 2px; }
+.yield-chart>.chart-x-title { position: absolute; right: 45px; bottom: 15px; left: 73px; }
+.bar-column,.pareto-combo,.line-plot { position: relative; z-index: 1; }
+.bar-column>strong,.bar-column>span { font-size: .82rem; }
+.line-plot text { font-family: var(--font-code); font-size: 13px; }
+.line-plot text.axis-label { font-family: var(--font-body); font-size: 12px; }
+.pareto-combo-bars span { font-size: .74rem; }
+.pareto-combo text { font-family: var(--font-code); font-size: 13px; }
+
+@media (max-width: 720px) {
+  :root { font-size: 15px; }
+  .quality-trend,.signal-chart,.production-chart { padding-right: 12px; padding-left: 62px; }
+  .chart-y-ticks { left: 8px; min-width: 44px; }
+  .yield-chart { padding: 66px 34px 58px 68px; }
+  .chart-scale { left: 8px; }
+  .chart-scale-right { right: 4px; left: auto; }
+  .plot-axis-y { left: 57px; }
+  .plot-axis-x,.yield-chart>.chart-x-title { left: 57px; }
+  .source-proof>span { grid-template-columns: 68px 1fr; }
+  .source-proof small { grid-column: 2; }
+}

@@ -7,7 +7,7 @@ function Assert-True {
 }
 
 Write-Host "Checking Stage 2 Docker services..." -ForegroundColor Cyan
-$services = docker compose -f compose.yml -f compose.deepseek.yml ps --format json | ConvertFrom-Json
+$services = docker compose ps --format json | ConvertFrom-Json
 Assert-True (($services | Measure-Object).Count -eq 3) 'three services are running'
 Assert-True ((@($services | Where-Object { $_.Health -ne 'healthy' })).Count -eq 0) 'all services are healthy'
 

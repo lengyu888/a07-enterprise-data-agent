@@ -27,7 +27,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .shell { position: relative; min-height: 100vh; padding: 26px clamp(20px, 4.6vw, 74px) 48px; overflow: hidden; }
 .blueprint { position: fixed; inset: 0; pointer-events: none; opacity: .6; background-image: linear-gradient(rgba(36,87,255,.07) 1px, transparent 1px), linear-gradient(90deg,rgba(36,87,255,.07) 1px,transparent 1px), radial-gradient(circle at 88% 6%,rgba(114,215,255,.42),transparent 23rem), radial-gradient(circle at 4% 68%,rgba(201,255,63,.2),transparent 27rem); background-size: 52px 52px,52px 52px,auto,auto; mask-image: linear-gradient(to bottom,#000 0%,rgba(0,0,0,.82) 72%,transparent 100%); }
-.masthead,.view-nav,.overview-view,.catalog-view,.knowledge-view,.quality-view,.equipment-view,.agent-view,.error-banner,.loading-screen { position: relative; z-index: 1; max-width: 1460px; margin-inline: auto; }
+.masthead,.view-nav,.overview-view,.catalog-view,.knowledge-view,.quality-view,.equipment-view,.production-view,.agent-view,.error-banner,.loading-screen { position: relative; z-index: 1; max-width: 1460px; margin-inline: auto; }
 
 .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 30px; padding: 16px 18px 24px; border: 2px solid var(--ink); border-bottom-width: 5px; background: rgba(255,254,250,.88); box-shadow: var(--shadow); }
 .brand-lockup { display: flex; align-items: center; gap: 26px; }

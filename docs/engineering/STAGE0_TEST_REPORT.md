@@ -11,7 +11,7 @@
 | Playwright 移动端 | 通过 |
 | 浏览器控制台错误 | 0 |
 | npm audit | 0 个已知漏洞 |
-| DeepSeek 实际请求 | 通过（Docker Secret，`deepseek-v4-pro`） |
+| DeepSeek 实际请求 | 通过（前端运行时配置，`deepseek-v4-pro`） |
 
 ## 1. 已验证内容
 
@@ -42,19 +42,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\test-stage0.ps1
 
 ## 3. DeepSeek 安全配置
 
-原宿主环境 Key 曾被 Compose 配置输出展开，应先在 DeepSeek 控制台轮换。新 Key 只写入 `.secrets/deepseek_api_key`，使用：
-
-```powershell
-docker compose -f compose.yml -f compose.deepseek.yml up --build -d
-```
-
-随后调用：
+进入工作台“模型配置 08”，填写 API Key 并完成连接验证。Key 仅保存在后端进程内存，容器重启后清除。随后可调用：
 
 ```powershell
 Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/v1/system/deepseek/probe
 ```
 
-不得把 Secret 文件、Key、完整 Compose 配置或含鉴权头的请求日志提交到 Git。
+不得把 Key 或含鉴权头的请求日志提交到 Git。
 
 ## 4. 阶段确认门
 
@@ -64,7 +58,7 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/v1/system/deepseek
 - [x] 三容器可在本机稳定启动；
 - [x] API 文档可访问；
 - [x] 冒烟脚本全部通过；
-- [x] 已配置新的 DeepSeek Key（Docker Secret）；
+- [x] 已通过前端页面配置 DeepSeek Key；
 - [x] 新 Key 的 probe 通过；
 - [x] 同意提交阶段 0、创建 `phase-0` 标签并配置/推送 GitHub remote。
 
