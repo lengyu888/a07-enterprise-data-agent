@@ -1,134 +1,269 @@
 # A07 企业数据底座智能问析 Agent
 
-浙江省大学生服务外包创新应用大赛 A07 赛题的 12 周比赛版本实现。
+面向浙江省大学生服务外包创新应用大赛 A07 赛题的制造业数据智能问析系统。项目以 **DeepSeek + LangGraph + RAG + Text-to-SQL** 为核心技术链路，让业务人员使用自然语言完成质量分析、设备异常诊断和生产趋势分析，并保留证据、SQL、数据结果与 Agent 轨迹供复核。
 
-核心技术主线：DeepSeek + LangGraph + 业务/Schema RAG + Text-to-SQL。
+当前版本：`0.7.0`，比赛功能收口版。系统只面向电脑网页端，统一推荐使用 `1440 × 900` 分辨率演示与验收。
 
-## 当前阶段
+## 项目定位
 
-阶段 6：生产趋势与六算法（Docker 本地测试候选版，等待用户确认）。
+传统企业数据平台需要使用者理解表结构、指标口径和 SQL。本系统在制造业演示数据底座上增加业务知识检索、Agent 编排和受控 SQL 执行能力，将一次问析组织为可追踪的工作流：
 
-- Vue 3 Web 工作台；
-- FastAPI 模块化单体；
-- PostgreSQL 16 + pgvector；
-- 9 张主演示表 + 1 张未知 Schema 留出表，固定业务日期 `2025-12-29`；
-- 约 11.8 万行可解释制造业数据，覆盖质量、设备、生产三个主题；
-- PostgreSQL 表/字段/注释/样例/外键自动扫描与关系图；
-- 业务主题、对象、指标、规则、同义词，以及指标口径 CRUD；
-- DeepSeek 服务端适配器；
-- LangGraph 八节点通用问析、四节点质量简报，以及设备/生产五节点专项链路；
-- 业务口径、强规则、Schema 与真实 Join 关系的精确证据检索；
-- DeepSeek Text-to-SQL 与结构化输出契约；
-- SQLGlot 单条只读 SQL、表白名单、语义字段、限行与时间边界校验；
-- PostgreSQL 只读事务执行、5 秒超时与结果快照；
-- Agent 轨迹、证据包、SQL、结果表、良率柱状图与有据结论；
-- FastEmbed `BAAI/bge-small-zh-v1.5` 本地中文 embedding；
-- 业务知识、Schema/关系、验证案例组成的 pgvector 索引；
-- 精确匹配、pg_trgm 模糊匹配、pgvector 语义匹配三路 RRF 融合；
-- 动态 EvidenceBundle，15 问必需表召回率 100%，上下文缩减约 70%；
-- 质量、设备、生产三个场景的基础通用 Text-to-SQL；
-- 质量专项的工序良率、缺陷 Pareto、30 天每日趋势与月度环比；
-- 3 组 EvidenceBundle + 4 组只读 SQL + DeepSeek 的一键管理层质量简报；
-- 审核 Recipe、设备日粒度 Feature SQL 与 SQLGlot 表白名单；
-- 本地 Isolation Forest 设备异常检测，固定算法参数与随机种子；
-- 历史中位数/IQR 特征偏离解释、九台设备排名和异常时间信号；
-- 设备事件原因核查线索与 DeepSeek 可靠性诊断简报；
-- 末工序完工量、计划达成率、29 日生产走势与产线排名；
-- 最近七日 LinearRegression 斜率，严格标注为趋势描述而非未来预测；
-- DeepSeek 生产运营简报、审核 Feature SQL、RAG 证据与节点轨迹；
-- LinearRegression、LogisticRegression、DecisionTree、RandomForest、KMeans、IsolationForest 六个审核 Recipe；
-- 六算法统一时间切分、固定随机种子、真实样本量和验收指标；
-- SQL 校验/执行失败后最多两次 DeepSeek 修复回路；
-- 柱状图、折线图、动态结果列与前端 RAG 检索台账；
-- Docker Compose 本地构建、健康检查与验收脚本。
+1. 识别质量、设备或生产场景；
+2. 从指标口径、业务规则、Schema、外键关系和验证案例中检索证据；
+3. 由 DeepSeek 生成 Text-to-SQL；
+4. 使用 SQLGlot 校验单条只读 SQL、表白名单、时间范围和返回行数；
+5. 在 PostgreSQL 只读事务中执行，失败时最多进行两轮 SQL 修复；
+6. 返回结论、结果表、可读图表、引用证据、SQL 和完整 Agent 节点轨迹。
 
-当前支持 20 个通用问析问题，质量、设备、生产三个场景均已形成专项闭环。比赛版不建设完整 MLOps，也不把七日趋势斜率包装为产量预测。
+系统强调“有依据地分析”，而不是只展示一段大模型回答。
 
-## 本地启动
+## 核心能力
 
-1. 可选：复制环境变量模板。
+| 能力域 | 已实现功能 |
+| --- | --- |
+| 企业数据目录 | 自动扫描 PostgreSQL 表、字段、类型、注释、样例与真实外键关系 |
+| 业务知识中心 | 维护主题、业务对象、指标口径、强规则、同义词和验证案例 |
+| 混合 RAG | 精确匹配、`pg_trgm` 模糊匹配、`pgvector` 语义检索与 RRF 融合 |
+| 通用智能问析 | LangGraph 八节点流程、DeepSeek Text-to-SQL、SQL 校验与修复、结果解释 |
+| 质量分析 | 工序良率、缺陷 Pareto、30 天趋势、月度环比和管理层质量简报 |
+| 设备异常 | Isolation Forest 异常检测、设备排名、特征偏离和事件原因核查线索 |
+| 生产趋势 | 完工量、计划达成率、产线排名与最近七日线性趋势斜率 |
+| 算法验收 | Linear/Logistic Regression、Decision Tree、Random Forest、KMeans、Isolation Forest 六套可复现 Recipe |
+| 审核与解释 | EvidenceBundle、SQL Artifact、结果快照、图表坐标轴、节点耗时和运行记录 |
+| 模型配置 | 前端填写并验证 DeepSeek API Key，可选择 `deepseek-v4-pro` 或 `deepseek-v4-flash` |
 
-   ```powershell
-   Copy-Item .env.example .env
-   ```
+## 技术架构
 
-2. 构建并启动。
+```mermaid
+flowchart LR
+    U[桌面浏览器] --> W[Vue 3 工作台]
+    W --> A[FastAPI 模块化单体]
+    A --> G[LangGraph Agent]
+    G --> R[混合 RAG]
+    G --> D[DeepSeek]
+    G --> S[Text-to-SQL 安全链路]
+    R --> P[(PostgreSQL + pgvector)]
+    S --> V[SQLGlot 校验]
+    V --> P
+    P --> G
+    G --> W
+```
 
-   ```powershell
-   docker compose up --build -d
-   ```
+主要技术选型：
 
-3. 查看容器状态。
+- 前端：Vue 3、TypeScript、Vite；
+- 后端：Python 3.12、FastAPI、Pydantic、SQLAlchemy、psycopg；
+- Agent：LangGraph、OpenAI 兼容 SDK、DeepSeek；
+- RAG：FastEmbed `BAAI/bge-small-zh-v1.5`、pgvector、pg_trgm、RRF；
+- SQL 安全：SQLGlot、只读事务、5 秒超时、最多 100 行结果；
+- 数据算法：scikit-learn；
+- 部署：Docker Compose，或本地源码运行。
 
-   ```powershell
-   docker compose ps
-   ```
+## 三个业务场景
 
-4. 打开工作台：<http://localhost:8080>
+### 质量分析
 
-   当前比赛版本仅提供电脑网页端，统一推荐并按 `1440×900` 作为唯一桌面验收基准。小屏设备只显示桌面端访问提示。
+支持良率、缺陷数量、工序/产线排名、缺陷 Pareto、日趋势与月度环比。质量专项 Agent 会并行组织多组证据和只读 SQL，最终生成可复核的管理层简报。
 
-5. 执行当前阶段冒烟测试。
+### 设备异常
 
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\scripts\test-stage6.ps1
-   ```
+使用固定训练窗口和随机种子的 Isolation Forest 对设备日粒度特征进行评分。结果给出异常设备、报警与停机特征偏离、异常日期和事件核查线索；算法只负责识别异常，不把相关性包装为根因。
 
-6. 停止服务。
+### 生产趋势
 
-   ```powershell
-   docker compose down
-   ```
+汇总末工序完工量、计划达成率、29 日走势和产线排名，并用最近七个业务日的线性斜率描述短期方向。该结果是趋势计算，不是未来产量预测。
+
+## 数据说明
+
+当前比赛版本使用系统内置的可解释制造业模拟数据，而不是连接真实企业生产库：
+
+- `demo` Schema：9 张主演示表和 1 张未知 Schema 留出表；
+- `app` Schema：知识、目录、Agent 运行、SQL Artifact 和算法 Recipe；
+- 数据规模约 11.8 万行；
+- 固定业务日期为 `2025-12-29`，保证每次演示结果可复现；
+- 后端启动时自动执行未应用的 SQL 迁移、刷新元数据目录并补齐 RAG 索引。
+
+接入真实企业数据时，应替换数据源和业务知识，不需要重写 Agent 主流程。
+
+## 目录结构
+
+```text
+A07 Agent/
+├─ apps/web/                  # Vue 3 桌面工作台与 Nginx 配置
+├─ services/app/              # FastAPI、Agent、RAG、算法和数据库迁移
+│  ├─ app/agent/              # 通用及三个专项 LangGraph
+│  ├─ app/rag/                # 索引构建与混合检索
+│  ├─ app/integrations/       # DeepSeek 适配器
+│  └─ migrations/             # 业务数据和各阶段增量迁移
+├─ infra/postgres/init/       # PostgreSQL 首次初始化
+├─ scripts/local/             # 本地安装、启停与验收脚本
+├─ scripts/test-stage*.ps1    # Docker 阶段验收脚本
+├─ tests/e2e/                 # 桌面端 Playwright 测试
+├─ docs/engineering/          # 工程计划与阶段测试报告
+└─ compose.yml                # Docker Compose 编排
+```
+
+## 方式一：Docker Compose 启动
+
+适合快速演示和统一环境，需要 Docker Desktop。
+
+```powershell
+Copy-Item .env.example .env
+docker compose up --build -d
+docker compose ps
+```
+
+打开 <http://localhost:8080>。后端健康检查为 <http://localhost:8000/api/health>，API 文档为 <http://localhost:8000/docs>。
+
+停止服务：
+
+```powershell
+docker compose down
+```
 
 不要执行 `docker compose down -v`，除非确认要清空本地数据库卷。
 
+## 方式二：Windows 本地部署
+
+本地模式直接运行 Python 后端和构建后的 Vue 前端，不依赖应用容器。完整本地部署还需要：
+
+- Python 3.12；
+- Node.js 22 LTS；
+- PostgreSQL 16；
+- PostgreSQL 已安装 pgvector 扩展，且 `psql` 已加入 `PATH`。
+
+Docker 模式和本地模式都使用 8000、8080 端口，切换前请先停止另一种模式。
+
+### 1. 初始化本机数据库
+
+确保 PostgreSQL 服务已启动，然后在项目根目录执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\local\init-database.ps1
+```
+
+脚本会创建本地开发数据库 `a07_agent`、账号 `a07_app`，并启用 `vector` 和 `pg_trgm`。默认口令仅供个人电脑比赛环境使用，不应复用于公网或生产环境。
+
+如 PostgreSQL 不在默认地址，可指定参数：
+
+```powershell
+.\scripts\local\init-database.ps1 -DatabaseHost 127.0.0.1 -Port 5432 -AdminUser postgres
+```
+
+### 2. 安装依赖
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\local\setup.ps1
+```
+
+脚本会创建根目录 `.venv`、安装 Python/Node 依赖、构建前端、生成 `services/app/.env`，并下载本地中文向量模型。首次执行需要联网且耗时较长。
+
+### 3. 启动系统
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\local\start.ps1
+```
+
+启动后访问 <http://127.0.0.1:8080>。运行日志位于 `.local-runtime/`。
+
+基础验收：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\local\verify.ps1
+```
+
+停止系统：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\local\stop.ps1
+```
+
+### 可选：应用本地运行，仅数据库使用 Docker
+
+Windows 本机暂未安装 pgvector 时，可以只启动数据库容器：
+
+```powershell
+docker compose down
+docker compose up -d postgres
+```
+
+执行本地 `setup.ps1` 后，将 `services/app/.env` 中数据库端口从 `5432` 改为 Docker 映射端口 `55432`，再运行 `start.ps1`。此方式仍然不启动 `app` 和 `web` 容器。
+
+## macOS / Linux 手动本地运行
+
+数据库初始化脚本为标准 `psql` 脚本，可按顺序执行：
+
+```bash
+psql -U postgres -d postgres -f scripts/local/001-create-database.sql
+psql -U postgres -d a07_agent -f infra/postgres/init/001-bootstrap.sql
+psql -U postgres -d a07_agent -f scripts/local/002-local-ownership.sql
+```
+
+安装并启动后端：
+
+```bash
+python3.12 -m venv .venv
+. .venv/bin/activate
+pip install -r services/app/requirements.txt
+python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='BAAI/bge-small-zh-v1.5', cache_dir='services/app/.cache/fastembed')"
+cp services/app/.env.example services/app/.env
+cd services/app
+../../.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+另开终端启动前端：
+
+```bash
+cd apps/web
+npm ci
+npm run start:local
+```
+
 ## DeepSeek 配置
 
-### 唯一配置方式：前端运行时配置
+DeepSeek API Key 只允许在前端运行时配置：
 
-打开 <http://localhost:8080>，进入“模型配置 08”，填入 API Key 后点击“保存并验证连接”。Key 仅保存在 FastAPI 进程内存中，不写数据库、不回显、不进入 Git，Docker 重启后自动清除。
+1. 打开工作台；
+2. 进入“模型配置 08”；
+3. 选择 `deepseek-v4-pro` 或 `deepseek-v4-flash`；
+4. 填写 API Key，点击“保存并验证连接”。
 
-- `GET /api/v1/system/deepseek/config`：返回脱敏配置状态；
-- `PUT /api/v1/system/deepseek/config`：设置并验证运行时 Key 与模型；
-- `DELETE /api/v1/system/deepseek/config`：清除页面运行时 Key。
+Key 只保存在当前 FastAPI 进程内存中，不写数据库、不写 `.env`、不进入日志和 Git，也不使用 Docker Secret。后端或容器重启后需要重新填写。
 
-页面提供 `deepseek-v4-pro` 与 `deepseek-v4-flash` 两个当前有效模型。首次配置必须填写 Key；后续切换模型时可以留空沿用当前内存 Key。已弃用的 `deepseek-chat`、`deepseek-reasoner` 不进入选择列表。
+## 主要 API
 
-系统不再读取 DeepSeek 环境变量、`.env` 或 Docker Secret。容器重启后必须在页面重新填写 Key。`/api/v1/system/deepseek/probe` 可单独验证 OpenAI SDK 兼容调用。
+- `GET /api/ready`：数据库与 DeepSeek 就绪状态；
+- `GET /api/v1/catalog/*`：元数据目录、字段和关系；
+- `GET/POST/PUT/DELETE /api/v1/knowledge/*`：业务知识与指标口径；
+- `POST /api/v1/rag/search`：混合 RAG EvidenceBundle；
+- `POST /api/v1/agent/runs`：通用智能问析；
+- `POST /api/v1/agent/quality/brief`：质量分析简报；
+- `POST /api/v1/agent/equipment/diagnosis`：设备异常诊断；
+- `POST /api/v1/agent/production/trend`：生产趋势分析；
+- `POST /api/v1/agent/algorithms/evaluate`：六算法工程验收；
+- `PUT /api/v1/system/deepseek/config`：设置并验证进程内模型配置。
 
-## 阶段 6 Agent / RAG / Algorithm API
+## 安全与比赛版边界
 
-- `GET /api/v1/agent/capabilities`：MVP 场景、问题与八节点链路边界；
-- `POST /api/v1/agent/runs`：执行真实质量问析；
-- `GET /api/v1/agent/runs`：最近运行及审计状态。
-- `POST /api/v1/agent/quality/brief`：运行质量简报 LangGraph；
-- `GET /api/v1/agent/evaluation/stage4`：质量场景连续成功门槛；
-- `POST /api/v1/agent/equipment/diagnosis`：运行设备异常 Recipe 与五节点 LangGraph；
-- `GET /api/v1/agent/evaluation/stage5`：设备算法连续成功门槛；
-- `POST /api/v1/agent/production/trend`：运行生产趋势 Recipe 与五节点 LangGraph；
-- `GET /api/v1/agent/algorithms`：查看六个已发布算法 Recipe；
-- `POST /api/v1/agent/algorithms/evaluate`：执行六算法统一工程验收；
-- `GET /api/v1/agent/evaluation/stage6`：生产连续成功与六算法验收门槛；
-- `GET /api/v1/rag/status`：向量模型、索引类型与证据数量；
-- `POST /api/v1/rag/search`：返回三路融合后的 EvidenceBundle；
-- `POST /api/v1/rag/reindex`：增量重建知识索引。
+- SQL 仅允许单条查询语句，禁止 DDL、DML 和未授权表；
+- 查询在 PostgreSQL 只读事务中运行，设置超时与结果行数上限；
+- DeepSeek Key 不持久化；
+- 当前数据为比赛模拟数据，不包含真实企业隐私数据；
+- 当前不包含 Kubernetes、多租户复杂治理、完整 MLOps、移动端和未来产量预测；
+- 系统面向本地比赛演示，不应直接暴露到公网。
 
-阶段 1 的数据目录与业务知识 API 继续保留：
+## 常见问题
 
-- `GET /api/v1/catalog/summary`：目录统计与固定业务日期；
-- `GET /api/v1/catalog/tables`：数据表目录；
-- `GET /api/v1/catalog/tables/{id}`：字段、类型、注释和样例；
-- `GET /api/v1/catalog/relations`：真实外键关系；
-- `POST /api/v1/catalog/refresh`：重新扫描 PostgreSQL 元数据；
-- `GET /api/v1/knowledge/overview`：主题、规则和同义词；
-- `GET/POST/PUT/DELETE /api/v1/knowledge/metrics`：指标口径维护。
+- **后端启动提示数据库不可用**：检查 PostgreSQL 服务与 `services/app/.env` 中的主机、端口和口令。
+- **提示 `extension "vector" is not available`**：本机 PostgreSQL 尚未安装 pgvector；安装扩展或使用“仅数据库 Docker”方式。
+- **首次安装或构建较慢**：系统需要下载中文 embedding 模型；首次启动还会执行数据迁移并建立向量索引。
+- **8000/8080 端口被占用**：先执行本地 `stop.ps1` 或 `docker compose down`。
+- **DeepSeek 显示未配置**：这是正常的安全设计；每次后端重启后都需要在前端重新填写 Key。
 
-## 文档
+## 设计与工程文档
 
 - [比赛版总体设计](./A07企业数据底座智能问析Agent系统_比赛版设计.md)
 - [工程分阶段计划](./docs/engineering/PHASE_PLAN.md)
 - [企业级扩展参考](./A07企业数据底座智能问析Agent系统_总体设计.md)
 
-## Git 交付规则
-
-每个阶段均遵循：开发分支 → 自动测试 → Docker 本地构建启动 → 用户测试确认 → 提交/打标签 → 推送 GitHub。未经用户确认，不推送远程仓库。
+项目继续遵循“本地构建与测试 → 用户确认 → 提交并推送 GitHub”的交付流程。未经确认，不推送远程仓库。

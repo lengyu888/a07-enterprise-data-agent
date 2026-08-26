@@ -1,4 +1,5 @@
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 CREATE SCHEMA IF NOT EXISTS app;
 CREATE SCHEMA IF NOT EXISTS demo;
@@ -14,4 +15,3 @@ VALUES
     ('project_stage', '"phase-0"'::jsonb),
     ('dataset_max_business_date', 'null'::jsonb)
 ON CONFLICT (config_key) DO NOTHING;
-

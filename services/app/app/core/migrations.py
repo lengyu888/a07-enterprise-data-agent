@@ -5,7 +5,10 @@ from sqlalchemy import text
 from app.core.database import get_engine
 
 
-MIGRATIONS_DIR = Path("/workspace/migrations")
+# Resolve from the application package so the same code works in Docker
+# (/workspace/migrations) and from a local source checkout
+# (services/app/migrations).
+MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 
 
 def run_migrations() -> None:

@@ -10,6 +10,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.cache/
 .venv/
 venv/
 
@@ -17,6 +18,7 @@ venv/
 node_modules/
 dist/
 .vite/
+*.tsbuildinfo
 
 # IDE / OS
 .idea/
@@ -31,4 +33,5 @@ coverage/
 
 # Local database volumes
 .local-data/
+.local-runtime/
 .tools/
