@@ -2,6 +2,7 @@ from functools import lru_cache
 from threading import RLock
 from typing import ClassVar, Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,13 +45,30 @@ class Settings(BaseSettings):
 
     app_name: str = "A07 企业数据底座智能问析 Agent"
     app_env: str = "local"
-    app_version: str = "0.9.0"
+    app_version: str = "0.9.1"
     database_url: str = "postgresql+psycopg://a07_app:a07_local_dev_change_me@postgres:5432/a07_agent"
 
     deepseek_base_url: ClassVar[str] = "https://api.deepseek.com"
     deepseek_reasoning_effort: ClassVar[Literal["high", "max"]] = "high"
     embedding_model: str = "BAAI/bge-small-zh-v1.5"
     embedding_cache_path: str = "/opt/fastembed-cache"
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_postgresql_driver(cls, value: object) -> object:
+        """Keep external Compose files on the installed psycopg 3 driver.
+
+        SQLAlchemy treats a plain ``postgresql://`` URL as psycopg2. The
+        competition image intentionally ships psycopg 3 only, so normalize
+        common legacy URL forms before the engine is created.
+        """
+        if not isinstance(value, str):
+            return value
+        prefixes = ("postgresql://", "postgres://", "postgresql+psycopg2://")
+        for prefix in prefixes:
+            if value.startswith(prefix):
+                return f"postgresql+psycopg://{value[len(prefix):]}"
+        return value
 
     @property
     def deepseek_configured(self) -> bool:

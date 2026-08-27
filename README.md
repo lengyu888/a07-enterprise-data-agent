@@ -2,7 +2,7 @@
 
 面向浙江省大学生服务外包创新应用大赛 A07 赛题的制造业数据智能问析系统。项目以 **DeepSeek + LangGraph + RAG + Text-to-SQL** 为核心技术链路，让业务人员使用自然语言完成质量分析、设备异常诊断和生产趋势分析，并保留证据、SQL、数据结果与 Agent 轨迹供复核。
 
-当前版本：`0.9.0`，比赛功能收口版。系统只面向电脑网页端，统一推荐使用 `1440 × 900` 分辨率演示与验收。
+当前版本：`0.9.1`，比赛功能收口版。系统只面向电脑网页端，统一推荐使用 `1440 × 900` 分辨率演示与验收。
 
 ## 项目定位
 
@@ -128,6 +128,23 @@ docker compose down
 ```
 
 不要执行 `docker compose down -v`，除非确认要清空本地数据库卷。
+
+### 使用离线镜像压缩包
+
+收到项目源码和离线镜像包后，在项目根目录执行：
+
+```powershell
+docker load -i "a07-agent-images-0.9.1.tar.gz"
+docker compose up -d --no-build
+docker compose ps
+```
+
+`--no-build` 会强制 Compose 使用已加载的 `a07-agent-app:0.9.1` 和
+`a07-agent-web:0.9.1`，不会因接收方的本地构建环境不同而生成另一份镜像。
+离线包对 App/Web 各保留一个明确版本标签，不再同时保存 `latest` 标签。
+
+若使用自己编写的 Compose，数据库连接串可写为 `postgresql://...` 或
+`postgresql+psycopg://...`；App 会统一使用镜像内已安装的 psycopg 3 驱动。
 
 ## 方式二：Windows 本地部署
 

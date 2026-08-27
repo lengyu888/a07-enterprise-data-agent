@@ -16,7 +16,18 @@ Assert-True ($web.StatusCode -eq 200) "desktop web is reachable"
 
 $health = Invoke-RestMethod -Uri "$apiBase/api/health"
 Assert-True ($health.status -eq "ok") "backend health check passes"
-Assert-True ($health.version -eq "0.9.0") "phase 7 application version is active"
+Assert-True ($health.version -eq "0.9.1") "phase 7 patch application version is active"
+
+$composeImages = @(docker compose config --images)
+Assert-True ($composeImages.Count -eq 3) "Compose resolves exactly three service images"
+Assert-True ($composeImages -contains 'a07-agent-app:0.9.1') "Compose pins the App 0.9.1 image"
+Assert-True ($composeImages -contains 'a07-agent-web:0.9.1') "Compose pins the Web 0.9.1 image"
+
+$driverCheck = @(docker compose run --rm --no-deps `
+    -e "DATABASE_URL=postgresql://a07_app:a07_local_dev_change_me@postgres:5432/a07_agent" `
+    app python -c "from app.core.config import get_settings; from app.core.database import check_database; print(get_settings().database_url.startswith('postgresql+psycopg://') and check_database())")
+$driverResult = [string]$driverCheck[$driverCheck.Count - 1]
+Assert-True ($driverResult.Trim() -eq 'True') "plain postgresql URL uses psycopg 3 and connects successfully"
 
 $capabilities = Invoke-RestMethod -Uri "$apiBase/api/v1/agent/capabilities"
 Assert-True ($capabilities.interaction.multi_turn) "multi-turn follow-up is enabled"
