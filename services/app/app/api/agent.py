@@ -5,6 +5,7 @@ from uuid import UUID
 from app.agent.service import (
     AgentRunError,
     algorithm_recipes,
+    cancel_analysis_run,
     capabilities,
     list_recent_runs,
     run_algorithm_evaluation,
@@ -26,9 +27,14 @@ router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
 class AgentQuestion(BaseModel):
     question: str = Field(min_length=4, max_length=300)
     clarification_id: UUID | None = None
+    request_id: UUID | None = None
+    parent_run_id: UUID | None = None
+    retry_of_run_id: UUID | None = None
 
 
 def _agent_error_status(exc: AgentRunError) -> int:
+    if exc.cancelled:
+        return 409
     if exc.run_id == "not-created":
         return 412
     if exc.unsupported:
@@ -111,9 +117,20 @@ def quality_evaluation_overview() -> dict[str, object]:
 @router.post("/runs")
 def create_run(payload: AgentQuestion) -> dict[str, object]:
     try:
-        return run_quality_analysis(payload.question, str(payload.clarification_id) if payload.clarification_id else None)
+        return run_quality_analysis(
+            payload.question,
+            str(payload.clarification_id) if payload.clarification_id else None,
+            request_id=str(payload.request_id) if payload.request_id else None,
+            parent_run_id=str(payload.parent_run_id) if payload.parent_run_id else None,
+            retry_of_run_id=str(payload.retry_of_run_id) if payload.retry_of_run_id else None,
+        )
     except AgentRunError as exc:
         raise HTTPException(
             status_code=_agent_error_status(exc),
             detail={"message": str(exc), "run_id": exc.run_id},
         ) from exc
+
+
+@router.post("/runs/{run_id}/cancel")
+def cancel_run(run_id: UUID) -> dict[str, object]:
+    return cancel_analysis_run(str(run_id))

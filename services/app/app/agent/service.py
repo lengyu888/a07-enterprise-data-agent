@@ -10,28 +10,62 @@ from sqlalchemy import text
 from app.agent.analysis_graph import HybridAnalysisGraph, SUPPORTED_QUESTIONS
 from app.agent.algorithm_suite import ALGORITHM_ORDER, evaluate_algorithm_suite, list_algorithm_recipes
 from app.agent.clarification_graph import ClarificationGraph, UnsafeQuestionError
+from app.agent.conversation import contextualize_follow_up, suggestions_for_scene
 from app.agent.equipment_anomaly_graph import EquipmentAnomalyGraph
 from app.agent.production_trend_graph import ProductionTrendGraph
 from app.agent.quality_brief_graph import build_quality_brief
+from app.agent.run_control import RunCancelledError, clear_cancellation, ensure_not_cancelled, request_cancellation
 from app.core.config import get_settings
 from app.core.database import get_engine
 
 
 class AgentRunError(RuntimeError):
-    def __init__(self, message: str, run_id: str, *, unsupported: bool = False) -> None:
+    def __init__(self, message: str, run_id: str, *, unsupported: bool = False, cancelled: bool = False) -> None:
         super().__init__(message)
         self.run_id = run_id
         self.unsupported = unsupported
+        self.cancelled = cancelled
 
 
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, default=str)
 
 
-def run_quality_analysis(question: str, clarification_id: str | None = None) -> dict[str, Any]:
+def run_quality_analysis(
+    question: str,
+    clarification_id: str | None = None,
+    *,
+    request_id: str | None = None,
+    parent_run_id: str | None = None,
+    retry_of_run_id: str | None = None,
+) -> dict[str, Any]:
     engine = get_engine()
+    original_question = question.strip()
+    resolved_question = original_question
+    context_trace: list[dict[str, Any]] = []
+    follow_up_suggestions: list[str] = []
+
+    if parent_run_id:
+        with engine.connect() as connection:
+            parent = connection.execute(text("""
+                SELECT run_id, question, scene, answer
+                FROM app.analysis_run
+                WHERE run_id=:run_id AND status='completed'
+            """), {"run_id": parent_run_id}).mappings().one_or_none()
+        if parent is None:
+            raise AgentRunError("上一轮问析不存在或尚未完成，无法继续追问", "not-created", unsupported=True)
+        contextualized = contextualize_follow_up(
+            original_question,
+            parent_question=parent["question"],
+            parent_scene=parent["scene"],
+            parent_answer=parent["answer"],
+        )
+        resolved_question = contextualized["resolved_question"]
+        context_trace = contextualized["trace"]
+        follow_up_suggestions = contextualized["suggestions"]
+
     try:
-        preflight = ClarificationGraph().invoke(question)
+        preflight = ClarificationGraph().invoke(resolved_question)
     except UnsafeQuestionError as exc:
         raise AgentRunError(str(exc), "not-created", unsupported=True) from exc
 
@@ -49,9 +83,10 @@ def run_quality_analysis(question: str, clarification_id: str | None = None) -> 
             })
         return {
             "status": "needs_clarification", "clarification_id": new_clarification_id,
-            "question": question, "detected_scene": preflight.get("detected_scene"),
+            "question": original_question, "resolved_question": resolved_question,
+            "parent_run_id": parent_run_id, "detected_scene": preflight.get("detected_scene"),
             "missing_fields": preflight["missing_fields"], "prompt": preflight["prompt"],
-            "options": preflight["options"], "trace": preflight["trace"],
+            "options": preflight["options"], "trace": context_trace + preflight["trace"],
         }
 
     if clarification_id:
@@ -60,28 +95,48 @@ def run_quality_analysis(question: str, clarification_id: str | None = None) -> 
                 UPDATE app.clarification_event
                 SET resolved_question=:question, resolved_at=NOW()
                 WHERE clarification_id=CAST(:clarification_id AS uuid) AND resolved_at IS NULL
-            """), {"question": question, "clarification_id": clarification_id})
+            """), {"question": resolved_question, "clarification_id": clarification_id})
 
     settings = get_settings()
     if not settings.deepseek_configured:
         raise AgentRunError("DeepSeek 尚未配置，请先进入模型配置页面填写 API Key", "not-created")
 
-    run_id = str(uuid4())
+    run_id = request_id or str(uuid4())
+    if retry_of_run_id:
+        with engine.connect() as connection:
+            retry_exists = connection.execute(
+                text("SELECT 1 FROM app.analysis_run WHERE run_id=:run_id"),
+                {"run_id": retry_of_run_id},
+            ).scalar_one_or_none()
+        if retry_exists is None:
+            retry_of_run_id = None
     started = time.perf_counter()
+    try:
+        ensure_not_cancelled(run_id)
+    except RunCancelledError as exc:
+        clear_cancellation(run_id)
+        raise AgentRunError(str(exc), run_id, cancelled=True) from exc
     with engine.begin() as connection:
         connection.execute(
             text(
                 """
-                INSERT INTO app.analysis_run (run_id, question, scene, status, model_id)
-                VALUES (:run_id, :question, 'pending', 'running', :model_id)
+                INSERT INTO app.analysis_run
+                    (run_id, question, original_question, parent_run_id, retry_of_run_id, scene, status, model_id)
+                VALUES (:run_id, :question, :original_question, :parent_run_id, :retry_of_run_id,
+                        'pending', 'running', :model_id)
                 """
             ),
-            {"run_id": run_id, "question": question, "model_id": settings.deepseek_model},
+            {
+                "run_id": run_id, "question": resolved_question, "original_question": original_question,
+                "parent_run_id": parent_run_id, "retry_of_run_id": retry_of_run_id,
+                "model_id": settings.deepseek_model,
+            },
         )
 
     try:
-        state = HybridAnalysisGraph(settings).invoke(question, run_id)
-        state["trace"] = preflight["trace"] + state["trace"]
+        state = HybridAnalysisGraph(settings).invoke(resolved_question, run_id)
+        ensure_not_cancelled(run_id)
+        state["trace"] = context_trace + preflight["trace"] + state["trace"]
         duration_ms = max(1, round((time.perf_counter() - started) * 1000))
         with engine.begin() as connection:
             for index, step in enumerate(state["trace"], start=1):
@@ -125,6 +180,16 @@ def run_quality_analysis(question: str, clarification_id: str | None = None) -> 
                 ),
                 {"run_id": run_id, "scene": state["scene"], "answer": state["answer"], "generation_mode": state["generation_mode"], "duration_ms": duration_ms},
             )
+    except RunCancelledError as exc:
+        duration_ms = max(1, round((time.perf_counter() - started) * 1000))
+        with engine.begin() as connection:
+            connection.execute(text("""
+                UPDATE app.analysis_run
+                SET status='cancelled', error_message=:error, cancel_requested_at=COALESCE(cancel_requested_at, NOW()),
+                    duration_ms=:duration_ms, completed_at=NOW()
+                WHERE run_id=:run_id AND status='running'
+            """), {"run_id": run_id, "error": str(exc), "duration_ms": duration_ms})
+        raise AgentRunError(str(exc), run_id, cancelled=True) from exc
     except Exception as exc:
         duration_ms = max(1, round((time.perf_counter() - started) * 1000))
         message = str(exc)[:500]
@@ -139,12 +204,14 @@ def run_quality_analysis(question: str, clarification_id: str | None = None) -> 
                 {"run_id": run_id, "error": message, "duration_ms": duration_ms},
             )
         raise AgentRunError(message, run_id, unsupported="仅支持" in message) from exc
+    finally:
+        clear_cancellation(run_id)
 
     return {
         "run_id": run_id,
         "status": "completed",
         "scene": state["scene"],
-        "question": question,
+        "question": resolved_question,
         "model": settings.deepseek_model,
         "generation_mode": state["generation_mode"],
         "duration_ms": duration_ms,
@@ -164,7 +231,36 @@ def run_quality_analysis(question: str, clarification_id: str | None = None) -> 
         "chart": state["chart_spec"],
         "answer": state["answer"],
         "trace": state["trace"],
+        "conversation": {
+            "original_question": original_question,
+            "resolved_question": resolved_question,
+            "parent_run_id": parent_run_id,
+            "retry_of_run_id": retry_of_run_id,
+            "suggestions": follow_up_suggestions or suggestions_for_scene(state["scene"]),
+        },
     }
+
+
+def cancel_analysis_run(run_id: str) -> dict[str, Any]:
+    request_cancellation(run_id)
+    with get_engine().begin() as connection:
+        row = connection.execute(text("""
+            UPDATE app.analysis_run
+            SET status='cancelled', cancel_requested_at=NOW(), completed_at=NOW(),
+                error_message='本次 Agent 运行已由用户取消'
+            WHERE run_id=:run_id AND status='running'
+            RETURNING run_id, status, cancel_requested_at
+        """), {"run_id": run_id}).mappings().one_or_none()
+        if row is None:
+            current = connection.execute(text(
+                "SELECT run_id, status, cancel_requested_at FROM app.analysis_run WHERE run_id=:run_id"
+            ), {"run_id": run_id}).mappings().one_or_none()
+    if row:
+        return {**dict(row), "accepted": True}
+    if current:
+        clear_cancellation(run_id)
+        return {**dict(current), "accepted": False}
+    return {"run_id": run_id, "status": "cancellation_requested", "cancel_requested_at": None, "accepted": True}
 
 
 def list_recent_runs(limit: int = 10) -> list[dict[str, Any]]:
@@ -299,10 +395,12 @@ def run_algorithm_evaluation() -> dict[str, Any]:
 
 def capabilities() -> dict[str, Any]:
     return {
-        "phase": "phase-6",
+        "phase": "phase-7",
         "supported_scenes": ["quality", "equipment", "production"],
         "supported_questions": SUPPORTED_QUESTIONS,
-        "pipeline": ["clarify", "retrieve", "plan", "text_to_sql", "validate_sql", "repair_sql", "execute_sql", "build_chart", "summarize"],
+        "pipeline": ["contextualize", "clarify", "retrieve", "plan", "text_to_sql", "validate_sql", "repair_sql", "execute_sql", "build_chart", "summarize"],
+        "interaction": {"multi_turn": True, "cancellable": True, "retryable": True},
+        "data_import": {"templates": ["quality_inspection", "equipment_event", "production_output"], "max_rows": 500},
         "limits": {"max_rows": 100, "statement_timeout_ms": 5000, "sql_mode": "read_only", "max_sql_repairs": 2},
         "rag": {"channels": ["exact", "pg_trgm", "pgvector"], "fusion": "RRF", "top_k": 10},
         "quality_specialization": ["process_yield", "defect_pareto", "daily_yield_trend", "month_over_month", "management_brief"],

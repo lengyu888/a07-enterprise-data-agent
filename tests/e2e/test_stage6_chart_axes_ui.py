@@ -38,6 +38,7 @@ def agent_run(chart_type: str) -> dict:
     return {
         "run_id": f"axis-{chart_type}",
         "status": "completed",
+        "scene": "production" if is_line else "equipment",
         "question": "验证生成图表坐标轴",
         "model": "deepseek-chat",
         "generation_mode": "test_fixture",
@@ -89,6 +90,7 @@ def agent_run(chart_type: str) -> dict:
             "series": [{"name": y_field, "data": values}],
         },
         "answer": "图表已基于真实查询结果生成，并明确标注横轴、纵轴、单位与刻度。",
+        "conversation": {"original_question": "验证生成图表坐标轴", "resolved_question": "验证生成图表坐标轴", "parent_run_id": None, "retry_of_run_id": None, "suggestions": ["换成上月", "按产线展开", "查看最近30天趋势"]},
         "trace": [
             {
                 "node_name": f"node_{index}",

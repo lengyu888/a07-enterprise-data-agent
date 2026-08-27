@@ -86,6 +86,8 @@ def evaluation_overview() -> dict[str, Any]:
     completed_rows = [row for row in run_rows if row["status"] == "completed"]
     completed = len(completed_rows)
     failed = sum(row["status"] == "failed" for row in run_rows)
+    cancelled = sum(row["status"] == "cancelled" for row in run_rows)
+    scored_total = completed + failed
     durations = sorted(int(row["duration_ms"] or 0) for row in completed_rows)
     p95_duration = durations[min(len(durations) - 1, max(0, math.ceil(len(durations) * 0.95) - 1))] if durations else 0
     one_pass = sum(int(row["repair_count"] or 0) == 0 for row in completed_rows)
@@ -97,7 +99,7 @@ def evaluation_overview() -> dict[str, Any]:
     metric_values = [
         ("rag_recall", "RAG 必需表召回", rag["required_table_recall_pct"], "%", 95.0, "gte", "验证案例中应出现的数据表是否进入 EvidenceBundle"),
         ("sql_first_pass", "SQL 一次通过", _percent(one_pass, completed), "%", 80.0, "gte", "无需修复即可通过 SQLGlot 并执行的问析占比"),
-        ("run_success", "问析成功率", _percent(completed, total), "%", 90.0, "gte", "最近 50 次通用问析中完成执行的比例"),
+        ("run_success", "问析成功率", _percent(completed, scored_total), "%", 90.0, "gte", "最近 50 次已结束问析中完成执行的比例；用户主动取消不计入失败"),
         ("evidence_chain", "证据链完整率", _percent(evidence_complete, completed), "%", 100.0, "gte", "同时具备 RAG、SQL、结果快照和结论的成功运行"),
         ("question_coverage", "标准问题覆盖", _percent(covered_questions, len(SUPPORTED_QUESTIONS)), "%", 80.0, "gte", "20 个标准问题中已有成功运行记录的比例"),
         ("p95_latency", "P95 问析延迟", float(p95_duration), "ms", 120000.0, "lte", "最近成功运行的第 95 百分位端到端耗时"),
@@ -113,7 +115,7 @@ def evaluation_overview() -> dict[str, Any]:
 
     return {
         "generated_at": generated_at,
-        "window": {"runs": total, "limit": 50, "completed": completed, "failed": failed},
+        "window": {"runs": total, "limit": 50, "completed": completed, "failed": failed, "cancelled": cancelled},
         "summary": {
             "passed_gates": passed_gates, "total_gates": len(metrics),
             "status": "ready" if passed_gates >= 5 else "attention" if passed_gates >= 3 else "insufficient_data",

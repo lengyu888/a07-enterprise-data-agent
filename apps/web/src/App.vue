@@ -18,13 +18,14 @@ type Synonym = { topic_code: string; canonical_term: string; synonym_term: strin
 type Metric = { metric_code: string; topic_code: 'quality' | 'equipment' | 'production'; metric_name: string; description: string; formula: string; unit: string; grain: string; dimensions: string[]; mapped_tables: string[]; owner_name: string; version: string; status: 'draft' | 'published' | 'disabled' }
 type AgentTrace = { node_name: string; display_name: string; status: string; duration_ms: number; summary: string; payload: Record<string, unknown> }
 type AgentRun = {
-  run_id: string; status: 'completed'; question: string; model: string; generation_mode: string; duration_ms: number
+  run_id: string; status: 'completed'; scene: string; question: string; model: string; generation_mode: string; duration_ms: number
   time_range: { start: string; end: string; anchor: string }; plan: string[]
   evidence: { metric: { code: string; name: string; formula: string; version: string }; rule: string; rules: Array<Record<string, string>>; tables: string[]; relations: Array<{ source_table: string; source_column: string; target_table: string; target_column: string }>; items: Array<{ id: number; source_type: string; source_id: string; title: string; score: number; channels: string[] }>; retrieval: { strategy: string; top_k: number; channel_hits: Record<string, number>; context_reduction_pct: number } }
   sql: { text: string; validation: string; repair_count: number; referenced_tables: string[] }
   result: { columns: string[]; rows: Array<Record<string, string | number>>; row_count: number }
   chart: { type: string; title: string; x_field: string; y_field: string; unit: string; categories: string[]; series: Array<{ name: string; data: number[] }> }
   answer: string; trace: AgentTrace[]
+  conversation: { original_question: string; resolved_question: string; parent_run_id: string | null; retry_of_run_id: string | null; suggestions: string[] }
 }
 
 type QualityBrief = {
@@ -81,7 +82,17 @@ type AlgorithmSuite = {
 }
 type AgentClarification = {
   status: 'needs_clarification'; clarification_id: string; question: string; detected_scene: string | null
+  resolved_question: string; parent_run_id: string | null
   missing_fields: string[]; prompt: string; options: Array<{ label: string; question: string }>; trace: AgentTrace[]
+}
+type ImportTemplate = {
+  code: string; name: string; scene: string; description: string; target_tables: string[]
+  columns: string[]; sample_csv: string; limits: { max_rows: number; date_range: string[] }
+}
+type ImportBatch = {
+  batch_id: string; template_code: string; template_name?: string; source_filename?: string
+  target_tables: string[]; row_count: number; status: string; created_at?: string
+  summary: { accepted_rows: number; rejected_rows: number; date_range: string[] }
 }
 type EvaluationMetric = {
   key: string; label: string; value: number; unit: string; threshold: number
@@ -89,7 +100,7 @@ type EvaluationMetric = {
 }
 type EvaluationOverview = {
   generated_at: string
-  window: { runs: number; limit: number; completed: number; failed: number }
+  window: { runs: number; limit: number; completed: number; failed: number; cancelled?: number }
   summary: { passed_gates: number; total_gates: number; status: 'ready' | 'attention' | 'insufficient_data' }
   metrics: EvaluationMetric[]
   rag: { case_count: number; passed_cases: number; case_pass_pct: number; required_table_recall_pct: number; metric_accuracy_pct: number; top_k: number; cases: Array<{ case_code: string; scene: string; question: string; metric_ok: boolean; expected_tables: string[]; recalled_tables: string[]; passed: boolean }> }
@@ -146,7 +157,23 @@ const agentError = ref('')
 const agentResult = ref<AgentRun | null>(null)
 const agentClarification = ref<AgentClarification | null>(null)
 const pendingClarificationId = ref<string | null>(null)
+const pendingParentRunId = ref<string | null>(null)
+const agentHistory = ref<AgentRun[]>([])
+const followUpQuestion = ref('')
+const agentAbortController = ref<AbortController | null>(null)
+const activeAgentRequestId = ref<string | null>(null)
+const agentCancelRequested = ref(false)
+const lastAgentAttempt = ref<{ question: string; parentRunId: string | null; clarificationId: string | null; requestId: string } | null>(null)
 const exportMessage = ref('')
+const importOpen = ref(false)
+const importTemplates = ref<ImportTemplate[]>([])
+const importBatches = ref<ImportBatch[]>([])
+const selectedImportTemplate = ref('quality_inspection')
+const importFileName = ref('')
+const importCsvText = ref('')
+const importRunning = ref(false)
+const importError = ref('')
+const importReceipt = ref<ImportBatch | null>(null)
 const qualityBrief = ref<QualityBrief | null>(null)
 const qualityBriefRunning = ref(false)
 const qualityBriefError = ref('')
@@ -372,22 +399,30 @@ type FetchOptions = RequestInit & { timeoutMs?: number }
 async function fetchJson<T>(url: string, options: FetchOptions = {}): Promise<T> {
   const { timeoutMs = 20_000, ...requestOptions } = options
   const controller = new AbortController()
+  const callerSignal = requestOptions.signal
+  let callerAborted = false
+  const abortFromCaller = () => { callerAborted = true; controller.abort() }
+  if (callerSignal?.aborted) abortFromCaller()
+  else callerSignal?.addEventListener('abort', abortFromCaller, { once: true })
   const timer = window.setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetch(url, { ...requestOptions, signal: controller.signal })
     if (!response.ok) {
-      const payload = await response.json().catch(() => ({})) as { detail?: string | { message?: string } }
+      const payload = await response.json().catch(() => ({})) as { detail?: string | { message?: string; errors?: Array<{ row: number; field: string; message: string }> } }
       const detail = typeof payload.detail === 'string' ? payload.detail : payload.detail?.message
+      const dataErrors = typeof payload.detail === 'object' ? payload.detail?.errors : undefined
       if (response.status === 504) throw new Error('模型请求超时，请稍后重试或切换 V4 Flash')
-      throw new Error(detail || `请求失败：${response.status}`)
+      const errorPreview = dataErrors?.slice(0, 4).map((item) => `第 ${item.row} 行 ${item.field}：${item.message}`).join('；')
+      throw new Error([detail || `请求失败：${response.status}`, errorPreview].filter(Boolean).join('。'))
     }
     return response.status === 204 ? (undefined as T) : await response.json() as T
   } catch (cause) {
-    if (cause instanceof DOMException && cause.name === 'AbortError') throw new Error('请求等待超时，请检查网络后重试')
+    if (cause instanceof DOMException && cause.name === 'AbortError') throw new Error(callerAborted ? '本次运行已取消，可按原问题重新运行' : '请求等待超时，请检查网络后重试')
     if (cause instanceof TypeError) throw new Error(navigator.onLine ? '无法连接后端服务，请确认 Docker 服务正常运行' : '网络连接已断开，请恢复网络后重试')
     throw cause
   } finally {
     window.clearTimeout(timer)
+    callerSignal?.removeEventListener('abort', abortFromCaller)
   }
 }
 
@@ -453,25 +488,104 @@ async function saveMetric() {
   } catch (cause) { metricError.value = cause instanceof Error ? cause.message : '指标口径保存失败' }
   finally { metricSaving.value = false }
 }
-async function runAgent() {
-  if (agentRunning.value || !agentQuestion.value.trim()) return
+async function executeAgent(question: string, parentRunId: string | null, clarificationId: string | null, resetConversation = false, retryOfRunId: string | null = null) {
+  if (agentRunning.value || !question.trim()) return
+  if (resetConversation) agentHistory.value = []
+  const requestId = crypto.randomUUID()
+  const controller = new AbortController()
+  agentAbortController.value = controller; activeAgentRequestId.value = requestId; agentCancelRequested.value = false
+  lastAgentAttempt.value = { question: question.trim(), parentRunId, clarificationId, requestId }
   agentRunning.value = true; agentError.value = ''; agentResult.value = null; agentClarification.value = null; exportMessage.value = ''
   try {
     const response = await fetchJson<AgentRun | AgentClarification>('/api/v1/agent/runs', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: agentQuestion.value.trim(), clarification_id: pendingClarificationId.value }), timeoutMs: 175_000,
+      body: JSON.stringify({ question: question.trim(), clarification_id: clarificationId, request_id: requestId, parent_run_id: parentRunId, retry_of_run_id: retryOfRunId }),
+      signal: controller.signal, timeoutMs: 175_000,
     })
     if (response.status === 'needs_clarification') {
-      agentClarification.value = response; pendingClarificationId.value = response.clarification_id
+      agentClarification.value = response; pendingClarificationId.value = response.clarification_id; pendingParentRunId.value = parentRunId
     } else {
-      agentResult.value = response; pendingClarificationId.value = null
+      agentResult.value = response; pendingClarificationId.value = null; pendingParentRunId.value = null; followUpQuestion.value = ''
     }
-  } catch (cause) { agentError.value = cause instanceof Error ? cause.message : 'Agent 执行失败' }
-  finally { agentRunning.value = false }
+  } catch (cause) { agentError.value = agentCancelRequested.value ? '本次运行已取消，可按原问题重新运行。' : cause instanceof Error ? cause.message : 'Agent 执行失败' }
+  finally {
+    if (activeAgentRequestId.value === requestId) {
+      agentRunning.value = false; agentAbortController.value = null; activeAgentRequestId.value = null
+    }
+  }
 }
-function continueWithClarification(question: string) { agentQuestion.value = question; void runAgent() }
+function runAgent() {
+  pendingClarificationId.value = null; pendingParentRunId.value = null
+  void executeAgent(agentQuestion.value, null, null, true)
+}
+function continueWithClarification(question: string) {
+  agentQuestion.value = question
+  void executeAgent(question, pendingParentRunId.value, pendingClarificationId.value)
+}
+function runFollowUp(question = followUpQuestion.value) {
+  if (!agentResult.value || !question.trim() || agentRunning.value) return
+  agentHistory.value.push(agentResult.value)
+  agentQuestion.value = question.trim()
+  void executeAgent(question, agentResult.value.run_id, null)
+}
+function retryAgent() {
+  const attempt = lastAgentAttempt.value
+  if (!attempt || agentRunning.value) return
+  void executeAgent(attempt.question, attempt.parentRunId, attempt.clarificationId, false, attempt.requestId)
+}
+async function cancelAgent() {
+  const requestId = activeAgentRequestId.value
+  if (!requestId || !agentRunning.value) return
+  agentCancelRequested.value = true
+  agentAbortController.value?.abort()
+  try { await fetchJson(`/api/v1/agent/runs/${requestId}/cancel`, { method: 'POST', timeoutMs: 10_000 }) }
+  catch { /* Original request still receives the local cancellation immediately. */ }
+}
 function chooseAgentQuestion(question: string) {
-  agentQuestion.value = question; agentClarification.value = null; pendingClarificationId.value = null; agentError.value = ''
+  agentQuestion.value = question; agentClarification.value = null; pendingClarificationId.value = null; pendingParentRunId.value = null; agentError.value = ''
+}
+
+async function openDataImport() {
+  importOpen.value = true; importError.value = ''; importReceipt.value = null
+  try {
+    const [templates, batches] = await Promise.all([
+      fetchJson<ImportTemplate[]>('/api/v1/data-imports/templates'),
+      fetchJson<ImportBatch[]>('/api/v1/data-imports?limit=6'),
+    ])
+    importTemplates.value = templates; importBatches.value = batches
+    if (!templates.some((item) => item.code === selectedImportTemplate.value) && templates[0]) selectedImportTemplate.value = templates[0].code
+  } catch (cause) { importError.value = cause instanceof Error ? cause.message : '导入模板读取失败' }
+}
+function downloadImportTemplate(template: ImportTemplate) {
+  const blob = new Blob([`\ufeff${template.sample_csv}`], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob); triggerDownload(url, `a07-${template.code}-template.csv`); window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+async function selectImportFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  importError.value = ''; importReceipt.value = null
+  if (!file.name.toLowerCase().endsWith('.csv')) { importError.value = '仅支持 CSV 文件'; input.value = ''; return }
+  if (file.size > 1_000_000) { importError.value = 'CSV 文件不能超过 1 MB'; input.value = ''; return }
+  importFileName.value = file.name; importCsvText.value = await file.text()
+}
+async function submitDataImport() {
+  if (importRunning.value || !importCsvText.value) return
+  importRunning.value = true; importError.value = ''; importReceipt.value = null
+  try {
+    importReceipt.value = await fetchJson<ImportBatch>('/api/v1/data-imports', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, timeoutMs: 120_000,
+      body: JSON.stringify({ template_code: selectedImportTemplate.value, filename: importFileName.value, csv_text: importCsvText.value }),
+    })
+    importBatches.value = await fetchJson<ImportBatch[]>('/api/v1/data-imports?limit=6')
+    const [catalogSummary, catalogTables] = await Promise.all([
+      fetchJson<CatalogSummary>('/api/v1/catalog/summary'), fetchJson<CatalogTable[]>('/api/v1/catalog/tables'),
+    ])
+    summary.value = catalogSummary; tables.value = catalogTables; tableDetail.value = null
+    if (catalogTables[0]) await selectTable(catalogTables[0].id)
+    importCsvText.value = ''; importFileName.value = ''
+  } catch (cause) { importError.value = cause instanceof Error ? cause.message : 'CSV 导入失败' }
+  finally { importRunning.value = false }
 }
 async function generateQualityBrief() {
   if (qualityBriefRunning.value) return
@@ -607,7 +721,7 @@ onBeforeUnmount(stopOverviewCarousel)
       </section>
 
       <section v-if="activeView === 'catalog'" class="catalog-view">
-        <header class="section-header"><div><p class="section-code">LIVE POSTGRESQL CATALOG</p><h2>数据资源目录</h2></div><div class="header-actions"><span>最近扫描 {{ formatDate(summary?.refreshed_at) }}</span><button @click="refreshCatalog" :disabled="refreshing">{{ refreshing ? '扫描中…' : '刷新元数据' }}</button></div></header>
+        <header class="section-header"><div><p class="section-code">LIVE POSTGRESQL CATALOG</p><h2>数据资源目录</h2></div><div class="header-actions"><span>最近扫描 {{ formatDate(summary?.refreshed_at) }}</span><button class="import-entry" @click="openDataImport">导入业务数据</button><button @click="refreshCatalog" :disabled="refreshing">{{ refreshing ? '扫描中…' : '刷新元数据' }}</button></div></header>
         <div class="filter-row"><button v-for="domain in domains" :key="domain" :class="{ active: selectedDomain === domain }" @click="selectedDomain = domain">{{ domain }}</button></div>
         <div class="catalog-layout">
           <aside class="table-list"><button v-for="table in visibleTables" :key="table.id" :class="{ active: tableDetail?.id === table.id }" @click="selectTable(table.id)"><span>{{ table.business_domain }}</span><strong>{{ table.display_name }}</strong><code>{{ table.schema_name }}.{{ table.table_name }}</code><small>{{ table.column_count }} 字段 · {{ formatNumber(table.row_count) }} 行</small></button></aside>
@@ -828,7 +942,7 @@ onBeforeUnmount(stopOverviewCarousel)
             <small>{{ example.code }}</small><b>{{ example.scene }}</b><i>→</i>
           </button>
         </div>
-        <div v-if="agentRunning" class="agent-progress"><i></i><p><strong>Agent 正在检查问题并准备分析</strong><span>完整问题将继续进入 RAG、DeepSeek 与 Text-to-SQL 链路。</span></p></div>
+        <div v-if="agentRunning" class="agent-progress"><i></i><p><strong>Agent 正在检查问题并准备分析</strong><span>完整问题将继续进入 RAG、DeepSeek 与 Text-to-SQL 链路。</span></p><button type="button" @click="cancelAgent">取消本次运行</button></div>
         <section v-if="agentClarification && !agentRunning" class="clarification-card">
           <div class="clarification-index"><span>AGENT GATE</span><strong>?</strong><small>WAITING FOR USER</small></div>
           <div class="clarification-content">
@@ -840,9 +954,13 @@ onBeforeUnmount(stopOverviewCarousel)
           </div>
           <footer><code>{{ agentClarification.clarification_id }}</code><span>未调用 DeepSeek · 未执行 SQL</span></footer>
         </section>
-        <div v-if="agentError" class="agent-error"><strong>本次执行未完成</strong><p>{{ agentError }}</p><button v-if="needsDeepseekConfig(agentError)" @click="activeView = 'settings'">前往模型配置</button><button v-else @click="runAgent">重新运行</button></div>
+        <div v-if="agentError" class="agent-error"><strong>本次执行未完成</strong><p>{{ agentError }}</p><button v-if="needsDeepseekConfig(agentError)" @click="activeView = 'settings'">前往模型配置</button><button v-else @click="retryAgent">按原参数重试</button></div>
 
         <template v-if="agentResult">
+          <section v-if="agentHistory.length" class="conversation-ledger">
+            <header><p class="section-code">CONVERSATION CONTEXT</p><h3>本轮沿着上一条结论继续下钻</h3><span>{{ agentHistory.length + 1 }} TURNS</span></header>
+            <div><article v-for="(turn, index) in agentHistory" :key="turn.run_id"><small>TURN {{ String(index + 1).padStart(2, '0') }}</small><strong>{{ turn.conversation.original_question }}</strong><p>{{ turn.answer }}</p></article><article class="current"><small>CURRENT</small><strong>{{ agentResult.conversation.original_question }}</strong><p v-if="agentResult.conversation.original_question !== agentResult.conversation.resolved_question">解析为：{{ agentResult.conversation.resolved_question }}</p></article></div>
+          </section>
           <section class="run-summary">
             <div><span>RUN STATUS</span><strong><i></i>{{ agentResult.status.toUpperCase() }}</strong></div>
             <div><span>MODEL</span><strong>{{ agentResult.model }}</strong></div>
@@ -921,6 +1039,11 @@ onBeforeUnmount(stopOverviewCarousel)
           </section>
 
           <section class="answer-card"><span>AGENT CONCLUSION</span><div class="quote-mark">“</div><p>{{ agentResult.answer }}</p><footer>结论基于检验数据与已发布指标口径 <b>·</b> 不推断未提供的根因</footer></section>
+          <section class="follow-up-console">
+            <header><div><p class="section-code">CONTEXTUAL FOLLOW-UP</p><h3>沿着当前结果继续问</h3></div><span>保留场景 · 指标 · 上一轮证据</span></header>
+            <div class="follow-up-suggestions"><button v-for="suggestion in agentResult.conversation.suggestions" :key="suggestion" @click="runFollowUp(suggestion)">{{ suggestion }} <b>→</b></button></div>
+            <form @submit.prevent="runFollowUp()"><textarea v-model="followUpQuestion" rows="2" maxlength="300" placeholder="例如：换成上月、按产线展开、为什么这台设备异常？" aria-label="追问问题"></textarea><button type="submit" :disabled="!followUpQuestion.trim() || agentRunning">继续下钻 <b>↗</b></button></form>
+          </section>
         </template>
       </section>
 
@@ -1010,5 +1133,22 @@ onBeforeUnmount(stopOverviewCarousel)
     </template>
 
     <div v-if="metricEditorOpen" class="modal-backdrop" @click.self="metricEditorOpen = false"><form class="metric-editor" @submit.prevent="saveMetric"><header><div><p class="section-code">METRIC DEFINITION</p><h2>{{ editingMetric ? '编辑指标口径' : '新增指标口径' }}</h2></div><button type="button" :disabled="metricSaving" @click="metricEditorOpen = false">×</button></header><div class="form-grid"><label>指标编码<input v-model="metricForm.metric_code" :disabled="editingMetric" required pattern="[a-z][a-z0-9_]{2,48}" /></label><label>业务主题<select v-model="metricForm.topic_code"><option v-for="topic in topics" :key="topic.topic_code" :value="topic.topic_code">{{ topic.topic_name }}</option></select></label><label>指标名称<input v-model="metricForm.metric_name" required /></label><label>单位<input v-model="metricForm.unit" required /></label><label class="wide">业务说明<textarea v-model="metricForm.description" required></textarea></label><label class="wide">计算公式<textarea v-model="metricForm.formula" class="formula-input" required></textarea></label><label>统计粒度<input v-model="metricForm.grain" required /></label><label>状态<select v-model="metricForm.status"><option value="draft">草稿</option><option value="published">已发布</option><option value="disabled">已停用</option></select></label><label class="wide">可用维度（顿号分隔）<input v-model="dimensionText" /></label><label class="wide">映射表（顿号分隔）<input v-model="mappedTableText" /></label></div><div v-if="metricError" class="config-feedback error">{{ metricError }}</div><footer><button type="button" :disabled="metricSaving" @click="metricEditorOpen = false">取消</button><button class="save" type="submit" :disabled="metricSaving">{{ metricSaving ? '正在保存…' : '保存口径' }}</button></footer></form></div>
+
+    <div v-if="importOpen" class="modal-backdrop import-backdrop" @click.self="importOpen = false">
+      <section class="data-import-panel" role="dialog" aria-modal="true" aria-label="导入业务数据">
+        <header><div><p class="section-code">CONTROLLED DATA INTAKE</p><h2>导入业务数据</h2><p>只接受三种已审核模板；整批校验通过后才写入 PostgreSQL。</p></div><button type="button" :disabled="importRunning" aria-label="关闭导入窗口" @click="importOpen = false">×</button></header>
+        <div class="import-layout">
+          <aside><span>01 / 选择场景模板</span><button v-for="template in importTemplates" :key="template.code" :class="{ active: selectedImportTemplate === template.code }" @click="selectedImportTemplate = template.code; importError = ''; importReceipt = null"><small>{{ template.scene }}</small><strong>{{ template.name }}</strong><p>{{ template.description }}</p><i>{{ template.columns.length }} FIELDS</i></button></aside>
+          <div v-if="importTemplates.find((item) => item.code === selectedImportTemplate)" class="import-main">
+            <div class="template-spec"><div><span>02 / 固定字段</span><h3>{{ importTemplates.find((item) => item.code === selectedImportTemplate)?.name }}</h3></div><button @click="downloadImportTemplate(importTemplates.find((item) => item.code === selectedImportTemplate)!)">下载示例 CSV ↓</button><p>{{ importTemplates.find((item) => item.code === selectedImportTemplate)?.columns.join(' · ') }}</p><small>最多 500 行 · 业务日期 2025-11-01 至 2025-12-29 · 不支持字段映射</small></div>
+            <label class="csv-drop"><input type="file" accept=".csv,text/csv" @change="selectImportFile" /><span>{{ importFileName || '选择已经按模板填写的 CSV 文件' }}</span><strong>{{ importFileName ? '重新选择' : '浏览文件' }} →</strong></label>
+            <div v-if="importError" class="import-feedback error"><strong>文件未写入</strong><p>{{ importError }}</p></div>
+            <div v-if="importReceipt" class="import-feedback success"><strong>导入完成 · {{ importReceipt.row_count }} 行</strong><p>批次 {{ importReceipt.batch_id }} · 已刷新数据目录</p></div>
+            <button class="import-submit" :disabled="!importCsvText || importRunning" @click="submitDataImport">{{ importRunning ? '正在校验并写入…' : '校验并导入 PostgreSQL' }} <b>↗</b></button>
+          </div>
+        </div>
+        <footer><span>RECENT IMPORTS</span><div v-if="importBatches.length"><article v-for="batch in importBatches" :key="batch.batch_id"><b>{{ batch.template_name || importTemplates.find((item) => item.code === batch.template_code)?.name || batch.template_code }}</b><span>{{ batch.source_filename }} · {{ batch.row_count }} 行</span><time>{{ formatDate(batch.created_at) }}</time></article></div><p v-else>尚无业务数据导入记录</p></footer>
+      </section>
+    </div>
   </main>
 </template>

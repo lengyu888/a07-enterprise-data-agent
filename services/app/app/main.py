@@ -7,6 +7,7 @@ from pydantic import BaseModel, SecretStr
 
 from app.api.agent import router as agent_router
 from app.api.catalog import router as catalog_router
+from app.api.data_import import router as data_import_router
 from app.api.knowledge import router as knowledge_router
 from app.api.rag import router as rag_router
 from app.catalog.service import refresh_catalog
@@ -75,6 +76,7 @@ app.add_middleware(
 )
 
 app.include_router(catalog_router)
+app.include_router(data_import_router)
 app.include_router(knowledge_router)
 app.include_router(agent_router)
 app.include_router(rag_router)

@@ -85,7 +85,7 @@ def agent_payload() -> dict:
         ]
     ]
     return {
-        "run_id": "export-run-001", "status": "completed", "question": "本月各设备非计划停机时长排名",
+        "run_id": "export-run-001", "status": "completed", "scene": "equipment", "question": "本月各设备非计划停机时长排名",
         "model": "deepseek-v4-pro", "generation_mode": "deepseek", "duration_ms": 8640,
         "time_range": {"start": "2025-12-01", "end": "2025-12-29", "anchor": "2025-12-29"},
         "plan": ["检索证据", "生成 SQL", "执行与解释"],
@@ -98,6 +98,7 @@ def agent_payload() -> dict:
         "result": {"columns": ["equipment_name", "downtime_minutes"], "rows": rows, "row_count": len(rows)},
         "chart": {"type": "bar", "title": "本月设备非计划停机时长排名", "x_field": "equipment_name", "y_field": "downtime_minutes", "unit": "分钟", "categories": [row["equipment_name"] for row in rows], "series": [{"name": "停机时长", "data": [row["downtime_minutes"] for row in rows]}]},
         "answer": "热处理炉8的非计划停机时长最高，建议优先核查相关事件记录。", "trace": trace,
+        "conversation": {"original_question": "本月各设备非计划停机时长排名", "resolved_question": "本月各设备非计划停机时长排名", "parent_run_id": None, "retry_of_run_id": None, "suggestions": ["换成上月", "按原因展开", "查看最近30天趋势"]},
     }
 
 

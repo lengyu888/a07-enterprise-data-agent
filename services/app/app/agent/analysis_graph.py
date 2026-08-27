@@ -19,6 +19,7 @@ from app.core.config import Settings
 from app.core.database import get_engine
 from app.integrations.deepseek import DeepSeekGateway
 from app.rag.retriever import bundle_for_prompt, retrieve_evidence
+from app.agent.run_control import ensure_not_cancelled
 
 
 SUPPORTED_QUESTIONS = [
@@ -179,6 +180,7 @@ class HybridAnalysisGraph:
         return self.graph.invoke({"question": question.strip(), "run_id": run_id, "repair_count": 0, "trace": []})
 
     def retrieve(self, state: AnalysisState) -> dict[str, Any]:
+        ensure_not_cancelled(state["run_id"])
         started = time.perf_counter()
         normalized = state["question"].lower()
         if any(token in normalized for token in ("drop ", "delete ", "update ", "insert ", "truncate ", "alter ", "删除表", "修改数据库", "忽略安全规则")):
@@ -193,8 +195,11 @@ class HybridAnalysisGraph:
         }
 
     def plan(self, state: AnalysisState) -> dict[str, Any]:
+        ensure_not_cancelled(state["run_id"])
         started = time.perf_counter()
-        if any(term in state["question"] for term in ("环比", "上月", "月度")):
+        if "上月" in state["question"] and "本月" not in state["question"] and not any(term in state["question"] for term in ("环比", "对比")):
+            period = {"start": "2025-11-01", "end": "2025-11-30", "anchor": "2025-12-29"}
+        elif any(term in state["question"] for term in ("环比", "上月", "月度")):
             period = {"start": "2025-11-01", "end": "2025-12-29", "anchor": "2025-12-29"}
         else:
             period = {"start": "2025-11-30" if "30天" in state["question"] else "2025-12-01", "end": "2025-12-29", "anchor": "2025-12-29"}
@@ -214,6 +219,7 @@ metric_column 必须使用指标编码；趋势问题 dimension_column=business_
         }
 
     def text_to_sql(self, state: AnalysisState) -> dict[str, Any]:
+        ensure_not_cancelled(state["run_id"])
         started = time.perf_counter()
         system_prompt = """你是制造业 PostgreSQL Text-to-SQL 节点。只使用 EvidenceBundle 中出现的表、字段、指标和 Join。
 返回 JSON 对象：{\"sql\":\"...\",\"rationale\":\"...\"}。只生成一条只读 SELECT/CTE；使用明确日期边界；输出列别名严格符合结果契约；指标百分数乘100并保留两位；返回完整分组结果，不得只 LIMIT 1；LIMIT 不超过100。缺陷 Pareto 必须按 defect_count 降序，并用窗口函数给出 cumulative_share 百分比。"""
@@ -316,7 +322,7 @@ metric_column 必须使用指标编码；趋势问题 dimension_column=business_
             raise ValueError(f"SQL 未落实指标 {metric_code} 的必要口径字段")
         if metric_code in ("yield_rate", "defect_rate") and "fact_quality_defect" in lower_sql:
             raise ValueError("良率/不良率禁止连接缺陷明细后计算")
-        if "2025-12" not in lower_sql:
+        if "2025-12" not in lower_sql and "2025-11" not in lower_sql:
             raise ValueError("SQL 缺少固定业务时间边界")
         expected = state["plan_contract"]["expected_columns"]
         if not all(column.lower() in lower_sql for column in expected):
@@ -337,6 +343,7 @@ metric_column 必须使用指标编码；趋势问题 dimension_column=business_
         return tree.sql(dialect="postgres", pretty=True), referenced, normalized
 
     def validate_sql(self, state: AnalysisState) -> dict[str, Any]:
+        ensure_not_cancelled(state["run_id"])
         started = time.perf_counter()
         try:
             safe_sql, referenced, normalized = self._guard_sql(state["sql"], state)
@@ -356,6 +363,7 @@ metric_column 必须使用指标编码；趋势问题 dimension_column=business_
         return "repair" if state.get("repair_count", 0) < 2 else "fail"
 
     def execute_sql(self, state: AnalysisState) -> dict[str, Any]:
+        ensure_not_cancelled(state["run_id"])
         started = time.perf_counter()
         try:
             with get_engine().connect() as connection:
@@ -390,6 +398,7 @@ metric_column 必须使用指标编码；趋势问题 dimension_column=business_
         return "repair" if state.get("repair_count", 0) < 2 else "fail"
 
     def repair_sql(self, state: AnalysisState) -> dict[str, Any]:
+        ensure_not_cancelled(state["run_id"])
         started = time.perf_counter()
         attempt = state.get("repair_count", 0) + 1
         error = state.get("validation_error") or state.get("execution_error") or "unknown"
@@ -419,10 +428,12 @@ metric_column 必须使用指标编码；趋势问题 dimension_column=business_
         }
 
     def fail(self, state: AnalysisState) -> dict[str, Any]:
+        ensure_not_cancelled(state["run_id"])
         error = state.get("validation_error") or state.get("execution_error") or "SQL 运行失败"
         raise ValueError(f"SQL 在 {state.get('repair_count', 0)} 次修复后仍未通过：{error}")
 
     def build_chart(self, state: AnalysisState) -> dict[str, Any]:
+        ensure_not_cancelled(state["run_id"])
         started = time.perf_counter()
         contract = state["plan_contract"]
         dimension = contract["dimension_column"]
@@ -440,6 +451,7 @@ metric_column 必须使用指标编码；趋势问题 dimension_column=business_
         return {"chart_spec": chart, "trace": _trace("build_chart", "图表生成", started, f"将 {len(state['rows'])} 行真实结果转换为{chart_name}图", {"chart_type": chart["type"], "points": len(state["rows"])})}
 
     def summarize(self, state: AnalysisState) -> dict[str, Any]:
+        ensure_not_cancelled(state["run_id"])
         started = time.perf_counter()
         system_prompt = "你是制造业数据分析师。仅依据真实查询结果，用中文输出2-3句结论；给出关键对象、指标值和时间；环比必须量化百分点变化；Pareto 必须指出累计占比达到80%前的关键缺陷；明确结论的数据边界，不推断未提供的根因。"
         payload = {"question": state["question"], "metric": state["bundle"]["metric"]["metric_name"], "time_range": state["time_range"], "rows": state["rows"]}

@@ -8,6 +8,7 @@ import './readability.css'
 import './model-settings.css'
 import './desktop.css'
 import './evaluation.css'
+import './phase7.css'
 
 createApp(App).mount('#app')
 

@@ -23,8 +23,8 @@ $health = Invoke-RestMethod -Uri "$apiBase/api/health"
 Assert-True ($health.status -eq "ok") "backend health check passes"
 
 $capabilities = Invoke-RestMethod -Uri "$apiBase/api/v1/agent/capabilities"
-Assert-True ($capabilities.pipeline[0] -eq "clarify") "clarification is the first Agent node"
-Assert-True ($capabilities.pipeline.Count -eq 9) "Agent capability pipeline exposes nine nodes"
+Assert-True ($capabilities.pipeline[0] -eq "contextualize") "contextual follow-up is the optional first Agent node"
+Assert-True ($capabilities.pipeline.Count -eq 10) "Agent capability pipeline exposes ten nodes"
 
 $ambiguousBody = '{"question":"\u5206\u6790\u4e00\u4e0b\u8bbe\u5907"}'
 $clarification = Invoke-RestMethod -Method Post -Uri "$apiBase/api/v1/agent/runs" -ContentType "application/json" -Body $ambiguousBody
