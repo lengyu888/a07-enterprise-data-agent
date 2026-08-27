@@ -18,7 +18,7 @@ type Synonym = { topic_code: string; canonical_term: string; synonym_term: strin
 type Metric = { metric_code: string; topic_code: 'quality' | 'equipment' | 'production'; metric_name: string; description: string; formula: string; unit: string; grain: string; dimensions: string[]; mapped_tables: string[]; owner_name: string; version: string; status: 'draft' | 'published' | 'disabled' }
 type AgentTrace = { node_name: string; display_name: string; status: string; duration_ms: number; summary: string; payload: Record<string, unknown> }
 type AgentRun = {
-  run_id: string; status: string; question: string; model: string; generation_mode: string; duration_ms: number
+  run_id: string; status: 'completed'; question: string; model: string; generation_mode: string; duration_ms: number
   time_range: { start: string; end: string; anchor: string }; plan: string[]
   evidence: { metric: { code: string; name: string; formula: string; version: string }; rule: string; rules: Array<Record<string, string>>; tables: string[]; relations: Array<{ source_table: string; source_column: string; target_table: string; target_column: string }>; items: Array<{ id: number; source_type: string; source_id: string; title: string; score: number; channels: string[] }>; retrieval: { strategy: string; top_k: number; channel_hits: Record<string, number>; context_reduction_pct: number } }
   sql: { text: string; validation: string; repair_count: number; referenced_tables: string[] }
@@ -79,8 +79,26 @@ type AlgorithmSuite = {
   algorithms: Array<{ algorithm: string; scene: string; use_case: string; status: string; rows: { training: number; validation: number }; metrics: Record<string, number>; boundary: string }>
   guardrail: string
 }
+type AgentClarification = {
+  status: 'needs_clarification'; clarification_id: string; question: string; detected_scene: string | null
+  missing_fields: string[]; prompt: string; options: Array<{ label: string; question: string }>; trace: AgentTrace[]
+}
+type EvaluationMetric = {
+  key: string; label: string; value: number; unit: string; threshold: number
+  direction: 'gte' | 'lte'; passed: boolean; description: string
+}
+type EvaluationOverview = {
+  generated_at: string
+  window: { runs: number; limit: number; completed: number; failed: number }
+  summary: { passed_gates: number; total_gates: number; status: 'ready' | 'attention' | 'insufficient_data' }
+  metrics: EvaluationMetric[]
+  rag: { case_count: number; passed_cases: number; case_pass_pct: number; required_table_recall_pct: number; metric_accuracy_pct: number; top_k: number; cases: Array<{ case_code: string; scene: string; question: string; metric_ok: boolean; expected_tables: string[]; recalled_tables: string[]; passed: boolean }> }
+  clarification: { total: number; resolved: number; pending: number; resolution_pct: number }
+  recent_runs: Array<{ run_id: string; question: string; scene: string; status: string; model_id: string; duration_ms: number; repair_count: number; evidence_complete: boolean; started_at: string }>
+  methodology: string
+}
 
-type ViewName = 'overview' | 'catalog' | 'knowledge' | 'quality' | 'equipment' | 'production' | 'agent' | 'settings'
+type ViewName = 'overview' | 'catalog' | 'knowledge' | 'quality' | 'equipment' | 'production' | 'agent' | 'evaluation' | 'settings'
 type OverviewSlide = {
   id: Exclude<ViewName, 'overview'>
   module: string
@@ -126,6 +144,9 @@ const agentQuestion = ref('分析本月各工序良率，找出良率最低的�
 const agentRunning = ref(false)
 const agentError = ref('')
 const agentResult = ref<AgentRun | null>(null)
+const agentClarification = ref<AgentClarification | null>(null)
+const pendingClarificationId = ref<string | null>(null)
+const exportMessage = ref('')
 const qualityBrief = ref<QualityBrief | null>(null)
 const qualityBriefRunning = ref(false)
 const qualityBriefError = ref('')
@@ -138,6 +159,9 @@ const productionError = ref('')
 const algorithmSuite = ref<AlgorithmSuite | null>(null)
 const algorithmRunning = ref(false)
 const algorithmError = ref('')
+const evaluation = ref<EvaluationOverview | null>(null)
+const evaluationLoading = ref(false)
+const evaluationError = ref('')
 const deepseekModels = [
   { id: 'deepseek-v4-pro', name: 'V4 Pro', tag: 'DEEP REASONING', description: '复杂 Text-to-SQL、分析规划与管理简报' },
   { id: 'deepseek-v4-flash', name: 'V4 Flash', tag: 'FAST RESPONSE', description: '快速演示、重复问析与低等待交互' },
@@ -149,7 +173,8 @@ const overviewSlides: OverviewSlide[] = [
   { id: 'equipment', module: '设备异常', code: 'MODULE 05 / EQUIPMENT ANOMALY', title: '别等停机', highlight: '先看偏离', description: '通过固定特征 Recipe 与 Isolation Forest 识别设备行为偏离，再由 DeepSeek 组织核查线索。', action: '打开设备诊断', backdrop: 'SIGNAL', accent: '#087ea4' },
   { id: 'production', module: '生产趋势', code: 'MODULE 06 / PRODUCTION TREND', title: '把计划差距', highlight: '变成行动线索', description: '审核 Recipe 将末工序口径、计划达成率、七日线性趋势与 DeepSeek 简报连成可复现生产问析链。', action: '打开生产趋势', backdrop: 'TREND', accent: '#2457ff' },
   { id: 'agent', module: '智能问析', code: 'MODULE 07 / AGENT ANALYSIS', title: '把自然语言', highlight: '变成可靠分析', description: 'DeepSeek 规划、混合 RAG、受控 Text-to-SQL、安全执行与动态图表共同形成有据可查的答案。', action: '启动智能问析', backdrop: 'AGENT', accent: '#ff5a36' },
-  { id: 'settings', module: '模型配置', code: 'MODULE 08 / MODEL CONNECTION', title: '把模型连接', highlight: '安全留在本机', description: '在浏览器中选择 DeepSeek 模型并验证 API Key；密钥仅保存在后端进程内存，重启即清除。', action: '打开模型配置', backdrop: 'MODEL', accent: '#087ea4' },
+  { id: 'evaluation', module: '问析评测', code: 'MODULE 08 / ANALYSIS EVALUATION', title: '把 Agent 质量', highlight: '变成硬指标', description: '用固定验证案例与真实运行记录衡量 RAG 召回、SQL 一次通过、证据链完整度和端到端延迟。', action: '打开质量评测台', backdrop: 'EVAL', accent: '#2457ff' },
+  { id: 'settings', module: '模型配置', code: 'MODULE 09 / MODEL CONNECTION', title: '把模型连接', highlight: '安全留在本机', description: '在浏览器中选择 DeepSeek 模型并验证 API Key；密钥仅保存在后端进程内存，重启即清除。', action: '打开模型配置', backdrop: 'MODEL', accent: '#087ea4' },
 ]
 const overviewSlideIndex = ref(0)
 const overviewCarouselPaused = ref(false)
@@ -251,6 +276,98 @@ function equipmentPointX(index: number) { const count = equipmentDiagnosis.value
 function equipmentPointY(score: number) { return 220 - 1.65 * score }
 function columnLabel(column: string) { return ({ process_name: '工序', product_name: '产品', equipment_name: '设备', event_reason: '原因', line_name: '产线', business_date: '日期', business_month: '月份', defect_type: '缺陷类型', yield_rate: '良率', defect_rate: '不良率', defect_count: '缺陷数量', cumulative_share: '累计占比', alarm_count: '报警次数', downtime_count: '停机次数', downtime_minutes: '停机时长', final_output: '完工产量', plan_attainment: '计划达成率', inspected_qty: '检验数量' } as Record<string, string>)[column] || column }
 function formatCell(value: string | number, column: string) { return typeof value === 'number' ? `${formatNumber(value)}${['yield_rate', 'defect_rate', 'plan_attainment', 'cumulative_share'].includes(column) ? '%' : ''}` : value }
+function clarificationFieldLabel(field: string) { return ({ scene: '业务场景', metric: '分析指标', time_range: '时间范围', dimension: '分析维度', goal: '分析目标' } as Record<string, string>)[field] || field }
+function evaluationValue(metric: EvaluationMetric) { return metric.unit === 'ms' ? formatDuration(metric.value) : `${metric.value.toFixed(1)}${metric.unit}` }
+function evaluationThreshold(metric: EvaluationMetric) { return `${metric.direction === 'gte' ? '≥' : '≤'} ${metric.unit === 'ms' ? formatDuration(metric.threshold) : `${metric.threshold}${metric.unit}`}` }
+function evaluationBar(metric: EvaluationMetric) {
+  if (metric.direction === 'lte') return `${Math.min(100, 100 * metric.threshold / Math.max(metric.value, 1))}%`
+  return `${Math.min(100, 100 * metric.value / Math.max(metric.threshold, 1))}%`
+}
+function safeFileName(value: string) { return value.replace(/[\\/:*?"<>|\s]+/g, '-').replace(/-+/g, '-').slice(0, 64) || 'analysis' }
+function triggerDownload(href: string, fileName: string, revoke = false) {
+  const anchor = document.createElement('a')
+  anchor.href = href; anchor.download = fileName; document.body.appendChild(anchor); anchor.click(); anchor.remove()
+  if (revoke) window.setTimeout(() => URL.revokeObjectURL(href), 0)
+}
+function csvCell(value: unknown) {
+  let text = value === null || value === undefined ? '' : String(value)
+  if (/^[=+\-@]/.test(text)) text = `'${text}`
+  return `"${text.replace(/"/g, '""')}"`
+}
+function exportAgentCsv() {
+  if (!agentResult.value) return
+  const { columns, rows } = agentResult.value.result
+  const lines = [columns.map((column) => csvCell(columnLabel(column))).join(',')]
+  lines.push(...rows.map((row) => columns.map((column) => csvCell(row[column])).join(',')))
+  const blob = new Blob(["\ufeff", lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+  const fileName = `a07-${agentResult.value.run_id.slice(0, 8)}-${safeFileName(agentResult.value.chart.title)}.csv`
+  triggerDownload(URL.createObjectURL(blob), fileName, true)
+  exportMessage.value = `CSV 已导出 · ${rows.length} 行`
+}
+function exportAgentPng() {
+  if (!agentResult.value) return
+  const result = agentResult.value
+  const chart = result.chart
+  const values = chart.series[0]?.data ?? []
+  if (!values.length) return
+  const canvas = document.createElement('canvas')
+  canvas.width = 1400; canvas.height = 820
+  const context = canvas.getContext('2d')
+  if (!context) return
+  const ink = '#17213d'; const blue = '#2457ff'; const orange = '#ff5b24'; const acid = '#c9ff3f'; const muted = '#66708a'
+  context.fillStyle = '#fffefa'; context.fillRect(0, 0, canvas.width, canvas.height)
+  context.fillStyle = blue; context.fillRect(0, 0, 24, canvas.height)
+  context.fillStyle = ink; context.font = '700 42px "Microsoft YaHei", sans-serif'; context.fillText(chart.title, 90, 78)
+  context.fillStyle = muted; context.font = '20px Consolas, monospace'; context.fillText(`${result.time_range.start}  →  ${result.time_range.end}   ·   ${result.result.row_count} ROWS   ·   ${result.run_id.slice(0, 8)}`, 92, 116)
+  const plot = { left: 150, top: 175, width: 1110, height: 480 }
+  const minimum = chart.unit === '%' && Math.min(...values) > 80 ? Math.floor(Math.min(...values) - 2) : 0
+  const maximum = Math.max(...values, minimum + 1)
+  context.strokeStyle = 'rgba(23,33,61,.18)'; context.lineWidth = 1
+  context.font = '18px Consolas, monospace'; context.textAlign = 'right'; context.textBaseline = 'middle'
+  for (let index = 0; index <= 4; index += 1) {
+    const y = plot.top + index * plot.height / 4
+    const tick = maximum - index * (maximum - minimum) / 4
+    context.beginPath(); context.moveTo(plot.left, y); context.lineTo(plot.left + plot.width, y); context.stroke()
+    context.fillStyle = muted; context.fillText(`${tick.toFixed(1)}${chart.unit}`, plot.left - 18, y)
+  }
+  context.strokeStyle = ink; context.lineWidth = 3
+  context.beginPath(); context.moveTo(plot.left, plot.top); context.lineTo(plot.left, plot.top + plot.height); context.lineTo(plot.left + plot.width, plot.top + plot.height); context.stroke()
+  const xFor = (index: number) => plot.left + (values.length <= 1 ? plot.width / 2 : 38 + index * (plot.width - 76) / (values.length - 1))
+  const yFor = (value: number) => plot.top + plot.height - (value - minimum) * plot.height / Math.max(maximum - minimum, 1)
+  if (chart.type === 'bar' || chart.type === 'pareto') {
+    const slot = plot.width / values.length; const barWidth = Math.min(110, slot * .58)
+    values.forEach((value, index) => {
+      const height = (value - minimum) * plot.height / Math.max(maximum - minimum, 1)
+      const x = plot.left + index * slot + (slot - barWidth) / 2
+      context.fillStyle = index < 2 && chart.type === 'pareto' ? orange : blue
+      context.fillRect(x, plot.top + plot.height - height, barWidth, height)
+      context.fillStyle = ink; context.font = '700 18px Consolas, monospace'; context.textAlign = 'center'; context.fillText(String(value), x + barWidth / 2, plot.top + plot.height - height - 18)
+    })
+  } else {
+    context.strokeStyle = blue; context.lineWidth = 6; context.lineJoin = 'round'; context.lineCap = 'round'; context.beginPath()
+    values.forEach((value, index) => index ? context.lineTo(xFor(index), yFor(value)) : context.moveTo(xFor(index), yFor(value)))
+    context.stroke(); values.forEach((value, index) => { context.fillStyle = orange; context.beginPath(); context.arc(xFor(index), yFor(value), 6, 0, Math.PI * 2); context.fill() })
+  }
+  if (chart.type === 'pareto' && chart.series[1]?.data.length) {
+    const cumulative = chart.series[1].data
+    const rightY = (value: number) => plot.top + plot.height - value * plot.height / 100
+    context.strokeStyle = acid; context.lineWidth = 7; context.beginPath()
+    cumulative.forEach((value, index) => index ? context.lineTo(xFor(index), rightY(value)) : context.moveTo(xFor(index), rightY(value)))
+    context.stroke(); context.fillStyle = ink; context.textAlign = 'left'; context.font = '18px "Microsoft YaHei", sans-serif'; context.fillText('右轴：累计占比 0—100%', plot.left + plot.width - 230, plot.top - 26)
+  }
+  context.fillStyle = ink; context.font = '18px "Microsoft YaHei", sans-serif'; context.textAlign = 'center'; context.textBaseline = 'top'
+  const labelStep = Math.max(1, Math.ceil(chart.categories.length / 10))
+  chart.categories.forEach((category, index) => {
+    if (index % labelStep !== 0 && index !== chart.categories.length - 1) return
+    const x = chart.type === 'bar' || chart.type === 'pareto' ? plot.left + (index + .5) * plot.width / chart.categories.length : xFor(index)
+    context.save(); context.translate(x, plot.top + plot.height + 18); context.rotate(-Math.PI / 8); context.fillText(String(category).slice(0, 14), 0, 0); context.restore()
+  })
+  context.save(); context.translate(48, plot.top + plot.height / 2); context.rotate(-Math.PI / 2); context.fillStyle = ink; context.font = '700 21px "Microsoft YaHei", sans-serif'; context.fillText(`${columnLabel(chart.y_field)}${chart.unit ? `（${chart.unit}）` : ''}`, 0, 0); context.restore()
+  context.fillStyle = ink; context.font = '700 21px "Microsoft YaHei", sans-serif'; context.textAlign = 'center'; context.fillText(columnLabel(chart.x_field), plot.left + plot.width / 2, 765)
+  const fileName = `a07-${result.run_id.slice(0, 8)}-${safeFileName(chart.title)}.png`
+  triggerDownload(canvas.toDataURL('image/png'), fileName)
+  exportMessage.value = `PNG 已导出 · 1400 × 820`
+}
 type FetchOptions = RequestInit & { timeoutMs?: number }
 async function fetchJson<T>(url: string, options: FetchOptions = {}): Promise<T> {
   const { timeoutMs = 20_000, ...requestOptions } = options
@@ -279,7 +396,7 @@ function requireDeepseek(setError: (message: string) => void) {
   setError('DeepSeek 尚未配置，请先进入“模型配置”填写 API Key 并完成连接验证。')
   return false
 }
-function needsDeepseekConfig(message: string) { return message.startsWith('DeepSeek 尚未配置') }
+function needsDeepseekConfig(message: string) { return message.startsWith('DeepSeek 尚未配置') || message.startsWith('DeepSeek Secret 未配置') }
 
 async function loadWorkspace() {
   loading.value = true; error.value = ''
@@ -308,6 +425,18 @@ function newMetric() {
   Object.assign(metricForm, { metric_code: '', topic_code: 'quality', metric_name: '', description: '', formula: '', unit: '%', grain: '日期×产线', dimensions: [], mapped_tables: [], owner_name: '比赛项目组', version: '1.0', status: 'draft' })
   dimensionText.value = ''; mappedTableText.value = ''; editingMetric.value = false; metricError.value = ''; metricEditorOpen.value = true
 }
+async function loadEvaluation() {
+  if (evaluationLoading.value) return
+  evaluationLoading.value = true; evaluationError.value = ''
+  try { evaluation.value = await fetchJson<EvaluationOverview>('/api/v1/agent/evaluation/overview', { timeoutMs: 120_000 }) }
+  catch (cause) { evaluationError.value = cause instanceof Error ? cause.message : '问析评测数据加载失败' }
+  finally { evaluationLoading.value = false }
+}
+function openEvaluation() { activeView.value = 'evaluation'; void loadEvaluation() }
+function openOverviewSlide() {
+  if (activeOverviewSlide.value.id === 'evaluation') openEvaluation()
+  else activeView.value = activeOverviewSlide.value.id
+}
 function editMetric(metric: Metric) {
   Object.assign(metricForm, metric); dimensionText.value = metric.dimensions.join('、'); mappedTableText.value = metric.mapped_tables.join('、')
   editingMetric.value = true; metricError.value = ''; metricEditorOpen.value = true
@@ -326,14 +455,23 @@ async function saveMetric() {
 }
 async function runAgent() {
   if (agentRunning.value || !agentQuestion.value.trim()) return
-  if (!requireDeepseek((message) => { agentError.value = message })) return
-  agentRunning.value = true; agentError.value = ''; agentResult.value = null
+  agentRunning.value = true; agentError.value = ''; agentResult.value = null; agentClarification.value = null; exportMessage.value = ''
   try {
-    agentResult.value = await fetchJson<AgentRun>('/api/v1/agent/runs', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: agentQuestion.value.trim() }), timeoutMs: 175_000,
+    const response = await fetchJson<AgentRun | AgentClarification>('/api/v1/agent/runs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: agentQuestion.value.trim(), clarification_id: pendingClarificationId.value }), timeoutMs: 175_000,
     })
+    if (response.status === 'needs_clarification') {
+      agentClarification.value = response; pendingClarificationId.value = response.clarification_id
+    } else {
+      agentResult.value = response; pendingClarificationId.value = null
+    }
   } catch (cause) { agentError.value = cause instanceof Error ? cause.message : 'Agent 执行失败' }
   finally { agentRunning.value = false }
+}
+function continueWithClarification(question: string) { agentQuestion.value = question; void runAgent() }
+function chooseAgentQuestion(question: string) {
+  agentQuestion.value = question; agentClarification.value = null; pendingClarificationId.value = null; agentError.value = ''
 }
 async function generateQualityBrief() {
   if (qualityBriefRunning.value) return
@@ -344,7 +482,7 @@ async function generateQualityBrief() {
   finally { qualityBriefRunning.value = false }
 }
 function openQualityQuestion(question: string) {
-  agentQuestion.value = question; agentResult.value = null; agentError.value = ''; activeView.value = 'agent'
+  chooseAgentQuestion(question); agentResult.value = null; activeView.value = 'agent'
 }
 async function generateEquipmentDiagnosis() {
   if (equipmentRunning.value) return
@@ -355,7 +493,7 @@ async function generateEquipmentDiagnosis() {
   finally { equipmentRunning.value = false }
 }
 function openEquipmentQuestion(question: string) {
-  agentQuestion.value = question; agentResult.value = null; agentError.value = ''; activeView.value = 'agent'
+  chooseAgentQuestion(question); agentResult.value = null; activeView.value = 'agent'
 }
 async function generateProductionTrend() {
   if (productionRunning.value) return
@@ -400,7 +538,7 @@ async function clearDeepseekConfig() {
   finally { deepseekConfigSaving.value = false }
 }
 function openProductionQuestion(question: string) {
-  agentQuestion.value = question; agentResult.value = null; agentError.value = ''; activeView.value = 'agent'
+  chooseAgentQuestion(question); agentResult.value = null; activeView.value = 'agent'
 }
 onMounted(() => {
   loadWorkspace()
@@ -431,7 +569,8 @@ onBeforeUnmount(stopOverviewCarousel)
       <button :class="{ active: activeView === 'equipment' }" @click="activeView = 'equipment'">设备诊断 <span>05</span></button>
       <button :class="{ active: activeView === 'production' }" @click="activeView = 'production'">生产趋势 <span>06</span></button>
       <button :class="{ active: activeView === 'agent' }" @click="activeView = 'agent'">智能问析 <span>07</span></button>
-      <button :class="{ active: activeView === 'settings' }" @click="activeView = 'settings'">模型配置 <span>08</span></button>
+      <button :class="{ active: activeView === 'evaluation' }" @click="openEvaluation">问析评测 <span>08</span></button>
+      <button :class="{ active: activeView === 'settings' }" @click="activeView = 'settings'">模型配置 <span>09</span></button>
       <div class="system-pill" :class="{ ready: systemReady }"><i></i>{{ systemStatusLabel }}</div>
     </nav>
     <div v-if="error" class="error-banner">{{ error }} <button @click="loadWorkspace">重试</button></div>
@@ -445,7 +584,7 @@ onBeforeUnmount(stopOverviewCarousel)
               <p class="section-code">{{ activeOverviewSlide.code }}</p>
               <h2>{{ activeOverviewSlide.title }}<br /><span>{{ activeOverviewSlide.highlight }}</span></h2>
               <p>{{ activeOverviewSlide.description }}</p>
-              <button class="primary-action" @click="activeView = activeOverviewSlide.id">{{ activeOverviewSlide.action }} <b>→</b></button>
+              <button class="primary-action" @click="openOverviewSlide">{{ activeOverviewSlide.action }} <b>→</b></button>
               <div class="overview-slide-progress" aria-hidden="true"><i :key="overviewSlideIndex"></i></div>
             </article>
           </Transition>
@@ -685,11 +824,22 @@ onBeforeUnmount(stopOverviewCarousel)
         </form>
         <div class="example-switcher">
           <span>QUICK TEST /</span>
-          <button v-for="example in agentExamples" :key="example.code" :class="{ active: agentQuestion === example.question }" @click="agentQuestion = example.question">
+          <button v-for="example in agentExamples" :key="example.code" :class="{ active: agentQuestion === example.question }" @click="chooseAgentQuestion(example.question)">
             <small>{{ example.code }}</small><b>{{ example.scene }}</b><i>→</i>
           </button>
         </div>
-        <div v-if="agentRunning" class="agent-progress"><i></i><p><strong>DeepSeek 正在推理并生成 SQL</strong><span>完整链路通常需要 30–90 秒，请保持页面开启。</span></p></div>
+        <div v-if="agentRunning" class="agent-progress"><i></i><p><strong>Agent 正在检查问题并准备分析</strong><span>完整问题将继续进入 RAG、DeepSeek 与 Text-to-SQL 链路。</span></p></div>
+        <section v-if="agentClarification && !agentRunning" class="clarification-card">
+          <div class="clarification-index"><span>AGENT GATE</span><strong>?</strong><small>WAITING FOR USER</small></div>
+          <div class="clarification-content">
+            <p class="section-code">AMBIGUITY CLARIFICATION NODE</p>
+            <h3>先把问题说完整，再开始查数</h3>
+            <p>{{ agentClarification.prompt }}</p>
+            <div class="missing-field-list"><span v-for="field in agentClarification.missing_fields" :key="field">缺少 · {{ clarificationFieldLabel(field) }}</span></div>
+            <div class="clarification-options"><button v-for="option in agentClarification.options" :key="option.question" @click="continueWithClarification(option.question)"><small>{{ option.label }}</small><b>{{ option.question }}</b><i>继续问析 →</i></button></div>
+          </div>
+          <footer><code>{{ agentClarification.clarification_id }}</code><span>未调用 DeepSeek · 未执行 SQL</span></footer>
+        </section>
         <div v-if="agentError" class="agent-error"><strong>本次执行未完成</strong><p>{{ agentError }}</p><button v-if="needsDeepseekConfig(agentError)" @click="activeView = 'settings'">前往模型配置</button><button v-else @click="runAgent">重新运行</button></div>
 
         <template v-if="agentResult">
@@ -735,7 +885,7 @@ onBeforeUnmount(stopOverviewCarousel)
           </div>
 
           <section class="result-section">
-            <header><div><p class="section-code">EXECUTED RESULT / NOT MOCKED</p><h3>{{ agentResult.chart.title }}</h3></div><div class="date-range">{{ agentResult.time_range.start }}<b>→</b>{{ agentResult.time_range.end }}</div></header>
+            <header><div><p class="section-code">EXECUTED RESULT / NOT MOCKED</p><h3>{{ agentResult.chart.title }}</h3></div><div class="result-header-tools"><div class="date-range">{{ agentResult.time_range.start }}<b>→</b>{{ agentResult.time_range.end }}</div><div class="export-actions"><button @click="exportAgentCsv">CSV <span>结果表</span> ↓</button><button @click="exportAgentPng">PNG <span>图表</span> ↓</button></div><small v-if="exportMessage">{{ exportMessage }}</small></div></header>
             <div class="result-grid">
               <div class="yield-chart" role="img" :aria-label="agentResult.chart.title">
                 <div class="chart-y-title">{{ columnLabel(agentResult.chart.y_field) }}{{ agentResult.chart.unit ? `（${agentResult.chart.unit}）` : '' }}</div>
@@ -771,6 +921,56 @@ onBeforeUnmount(stopOverviewCarousel)
           </section>
 
           <section class="answer-card"><span>AGENT CONCLUSION</span><div class="quote-mark">“</div><p>{{ agentResult.answer }}</p><footer>结论基于检验数据与已发布指标口径 <b>·</b> 不推断未提供的根因</footer></section>
+        </template>
+      </section>
+
+      <section v-if="activeView === 'evaluation'" class="evaluation-view">
+        <header class="evaluation-hero">
+          <div><p class="section-code">ANALYSIS QUALITY / EVIDENCE-BASED SCOREBOARD</p><h2>问析不是黑盒，<br /><span>每一项都能验收</span></h2><p>固定验证案例衡量 RAG，真实运行记录衡量 SQL、证据链与延迟。所有分数均由数据库计算，不让大模型给自己打分。</p><button :disabled="evaluationLoading" @click="loadEvaluation">{{ evaluationLoading ? '正在重新计算…' : '重新计算评测 →' }}</button></div>
+          <aside :class="evaluation?.summary.status" :style="{ '--gate-progress': evaluation ? `${100 * evaluation.summary.passed_gates / Math.max(evaluation.summary.total_gates, 1)}%` : '0%' }">
+            <header><span>QUALITY GATES</span><b>{{ evaluation?.summary.status === 'ready' ? 'READY' : evaluation?.summary.status === 'attention' ? 'ATTENTION' : 'COLLECTING' }}</b></header>
+            <div class="evaluation-gate-dial"><div><small>PASSED</small><strong>{{ evaluation?.summary.passed_gates ?? '—' }}<em>/{{ evaluation?.summary.total_gates ?? '—' }}</em></strong><span>质量门禁通过</span></div></div>
+            <footer>
+              <div><span>REAL RUNS</span><strong>{{ evaluation?.window.runs ?? 0 }}</strong></div>
+              <div><span>GATE RATE</span><strong>{{ evaluation ? Math.round(100 * evaluation.summary.passed_gates / Math.max(evaluation.summary.total_gates, 1)) : 0 }}%</strong></div>
+              <i><em></em></i><small>最近真实问析样本 · 数据库实时计算</small>
+            </footer>
+          </aside>
+        </header>
+
+        <div v-if="evaluationLoading" class="evaluation-loading"><i></i><div><strong>正在执行固定 RAG 验证集</strong><span>同时汇总最近问析、SQL 修复与证据链记录。</span></div></div>
+        <div v-if="evaluationError" class="agent-error"><strong>评测数据未完成</strong><p>{{ evaluationError }}</p><button @click="loadEvaluation">重新计算</button></div>
+
+        <template v-if="evaluation && !evaluationLoading">
+          <section class="evaluation-metrics">
+            <article v-for="(metric,index) in evaluation.metrics" :key="metric.key" :class="{ passed: metric.passed }">
+              <header><span>0{{ index + 1 }}</span><b>{{ metric.passed ? 'PASS' : 'CHECK' }}</b></header>
+              <h3>{{ metric.label }}</h3><strong>{{ evaluationValue(metric) }}</strong>
+              <div><i><em :style="{ width: evaluationBar(metric) }"></em></i><small>门槛 {{ evaluationThreshold(metric) }}</small></div>
+              <p>{{ metric.description }}</p>
+            </article>
+          </section>
+
+          <div class="evaluation-detail-grid">
+            <section class="rag-benchmark-card">
+              <header><div><p class="section-code">RAG GOLD SET / TOP {{ evaluation.rag.top_k }}</p><h3>必需表召回账本</h3></div><strong>{{ evaluation.rag.passed_cases }}/{{ evaluation.rag.case_count }}</strong></header>
+              <div class="rag-benchmark-kpis"><span><b>{{ evaluation.rag.required_table_recall_pct }}%</b>必需表召回</span><span><b>{{ evaluation.rag.metric_accuracy_pct }}%</b>指标命中</span><span><b>{{ evaluation.rag.case_pass_pct }}%</b>案例通过</span></div>
+              <div class="evaluation-case-list"><article v-for="item in evaluation.rag.cases" :key="item.case_code"><i :class="{ on: item.passed }"></i><span><b>{{ item.case_code }}</b>{{ item.question }}</span><small>{{ item.recalled_tables.length }}/{{ item.expected_tables.length }} TABLES</small></article></div>
+            </section>
+
+            <section class="clarification-audit-card">
+              <header><p class="section-code">CLARIFICATION FUNNEL</p><h3>歧义问题拦截</h3></header>
+              <div class="clarification-score"><strong>{{ evaluation.clarification.total }}</strong><span>次问题被要求补充</span></div>
+              <dl><div><dt>已继续问析</dt><dd>{{ evaluation.clarification.resolved }}</dd></div><div><dt>等待补充</dt><dd>{{ evaluation.clarification.pending }}</dd></div><div><dt>澄清转化率</dt><dd>{{ evaluation.clarification.resolution_pct }}%</dd></div></dl>
+              <p>歧义节点先检查场景、指标、时间、维度和目标；信息不足时不会调用 DeepSeek，也不会生成 SQL。</p>
+            </section>
+          </div>
+
+          <section class="evaluation-runs">
+            <header><div><p class="section-code">RECENT RUN AUDIT / LAST 10</p><h3>最近问析运行</h3></div><span>{{ evaluation.window.completed }} COMPLETED · {{ evaluation.window.failed }} FAILED</span></header>
+            <div class="evaluation-run-table"><div class="evaluation-run-head"><span>状态</span><span>问题</span><span>场景 / 模型</span><span>SQL 修复</span><span>证据链</span><span>耗时</span></div><article v-for="run in evaluation.recent_runs" :key="run.run_id"><b :class="run.status">{{ run.status.toUpperCase() }}</b><span><strong>{{ run.question }}</strong><code>{{ run.run_id.slice(0, 8) }}</code></span><span>{{ run.scene }}<small>{{ run.model_id }}</small></span><span>{{ run.repair_count }}/2</span><span :class="{ complete: run.evidence_complete }">{{ run.evidence_complete ? '完整' : '缺失' }}</span><time>{{ formatDuration(run.duration_ms) }}</time></article><p v-if="!evaluation.recent_runs.length">尚无真实问析记录，完成一次智能问析后即可形成运行质量指标。</p></div>
+            <footer><span>{{ evaluation.methodology }}</span><time>{{ formatDate(evaluation.generated_at) }}</time></footer>
+          </section>
         </template>
       </section>
 

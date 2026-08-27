@@ -55,7 +55,9 @@ def main() -> None:
         page.get_by_role("button", name="启动智能问析").click()
         expect(page.locator(".agent-error")).to_contain_text("DeepSeek 尚未配置")
         expect(page.get_by_role("button", name="前往模型配置")).to_be_visible()
-        assert agent_posts == 0
+        # Questions now reach the backend clarification gate first; only a
+        # complete question proceeds far enough to return the model-config error.
+        assert agent_posts == 1
         page.close()
 
         timeout_page = browser.new_page(viewport={"width": 1440, "height": 900})

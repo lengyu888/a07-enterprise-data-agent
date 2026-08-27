@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
+from uuid import UUID
 
 from app.agent.service import (
     AgentRunError,
@@ -16,6 +17,7 @@ from app.agent.service import (
     stage5_evaluation_summary,
     stage6_evaluation_summary,
 )
+from app.agent.evaluation import evaluation_overview
 
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
@@ -23,6 +25,7 @@ router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
 
 class AgentQuestion(BaseModel):
     question: str = Field(min_length=4, max_length=300)
+    clarification_id: UUID | None = None
 
 
 def _agent_error_status(exc: AgentRunError) -> int:
@@ -100,10 +103,15 @@ def stage6_evaluation() -> dict[str, object]:
     return stage6_evaluation_summary()
 
 
+@router.get("/evaluation/overview")
+def quality_evaluation_overview() -> dict[str, object]:
+    return evaluation_overview()
+
+
 @router.post("/runs")
 def create_run(payload: AgentQuestion) -> dict[str, object]:
     try:
-        return run_quality_analysis(payload.question)
+        return run_quality_analysis(payload.question, str(payload.clarification_id) if payload.clarification_id else None)
     except AgentRunError as exc:
         raise HTTPException(
             status_code=_agent_error_status(exc),

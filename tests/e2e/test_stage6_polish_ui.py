@@ -38,7 +38,7 @@ def main() -> None:
         )
         desktop.goto(BASE_URL, wait_until="networkidle")
         expect(desktop.get_by_role("heading", name="让数据资产 先被看懂")).to_be_visible()
-        expect(desktop.locator(".overview-module-rail button")).to_have_count(7)
+        expect(desktop.locator(".overview-module-rail button")).to_have_count(8)
         body_font = desktop.locator("body").evaluate(
             "element => getComputedStyle(element).fontFamily"
         )

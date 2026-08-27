@@ -33,7 +33,7 @@ def main() -> None:
 
         carousel = page.locator(".overview-carousel")
         rail = carousel.locator(".overview-module-rail")
-        expect(rail.locator("button")).to_have_count(7)
+        expect(rail.locator("button")).to_have_count(8)
         expect(rail.locator("button.active")).to_contain_text("数据目录")
         expect(carousel.locator(".overview-slide h2")).to_contain_text("让数据资产")
 

@@ -12,6 +12,7 @@
 .equipment-view,
 .production-view,
 .agent-view,
+.evaluation-view,
 .model-settings-view,
 .error-banner,
 .loading-screen {
@@ -22,7 +23,7 @@
 
 .view-nav {
   display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr)) minmax(166px, auto);
+  grid-template-columns: repeat(9, minmax(0, 1fr)) minmax(150px, auto);
   overflow: visible;
 }
 .view-nav button {
@@ -35,7 +36,7 @@
 }
 .system-pill {
   justify-content: center;
-  min-width: 166px;
+  min-width: 150px;
   margin-left: 0;
   padding-inline: 14px;
   white-space: nowrap;

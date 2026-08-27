@@ -70,7 +70,7 @@ def main() -> None:
 
         desktop.route("**/api/v1/system/deepseek/config", handle_config)
         desktop.goto(BASE_URL, wait_until="networkidle")
-        desktop.get_by_role("button", name="模型配置 08").click()
+        desktop.get_by_role("button", name="模型配置 09").click()
         expect(desktop.get_by_role("heading", name="把模型连接 留在本机")).to_be_visible()
         expect(desktop.locator(".settings-hero aside strong")).to_have_text("SETUP")
         expect(desktop.locator(".connection-card dd").first).to_have_text("尚未配置")

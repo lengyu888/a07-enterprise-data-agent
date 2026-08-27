@@ -2,18 +2,19 @@
 
 面向浙江省大学生服务外包创新应用大赛 A07 赛题的制造业数据智能问析系统。项目以 **DeepSeek + LangGraph + RAG + Text-to-SQL** 为核心技术链路，让业务人员使用自然语言完成质量分析、设备异常诊断和生产趋势分析，并保留证据、SQL、数据结果与 Agent 轨迹供复核。
 
-当前版本：`0.7.0`，比赛功能收口版。系统只面向电脑网页端，统一推荐使用 `1440 × 900` 分辨率演示与验收。
+当前版本：`0.8.0`，比赛功能收口版。系统只面向电脑网页端，统一推荐使用 `1440 × 900` 分辨率演示与验收。
 
 ## 项目定位
 
 传统企业数据平台需要使用者理解表结构、指标口径和 SQL。本系统在制造业演示数据底座上增加业务知识检索、Agent 编排和受控 SQL 执行能力，将一次问析组织为可追踪的工作流：
 
-1. 识别质量、设备或生产场景；
+1. 先检查制造场景、指标、时间范围、分析维度和目标是否完整；信息不足时进入歧义澄清，不调用模型、不生成 SQL；
 2. 从指标口径、业务规则、Schema、外键关系和验证案例中检索证据；
 3. 由 DeepSeek 生成 Text-to-SQL；
 4. 使用 SQLGlot 校验单条只读 SQL、表白名单、时间范围和返回行数；
 5. 在 PostgreSQL 只读事务中执行，失败时最多进行两轮 SQL 修复；
-6. 返回结论、结果表、可读图表、引用证据、SQL 和完整 Agent 节点轨迹。
+6. 返回结论、结果表、可读图表、引用证据、SQL 和完整 Agent 节点轨迹；
+7. 支持将查询结果导出为 UTF-8 CSV，将带坐标轴、单位和标题的图表导出为 PNG。
 
 系统强调“有依据地分析”，而不是只展示一段大模型回答。
 
@@ -24,12 +25,14 @@
 | 企业数据目录 | 自动扫描 PostgreSQL 表、字段、类型、注释、样例与真实外键关系 |
 | 业务知识中心 | 维护主题、业务对象、指标口径、强规则、同义词和验证案例 |
 | 混合 RAG | 精确匹配、`pg_trgm` 模糊匹配、`pgvector` 语义检索与 RRF 融合 |
-| 通用智能问析 | LangGraph 八节点流程、DeepSeek Text-to-SQL、SQL 校验与修复、结果解释 |
+| 通用智能问析 | LangGraph 九节点能力图（SQL 修复按需执行）、歧义澄清、DeepSeek Text-to-SQL、结果解释 |
 | 质量分析 | 工序良率、缺陷 Pareto、30 天趋势、月度环比和管理层质量简报 |
 | 设备异常 | Isolation Forest 异常检测、设备排名、特征偏离和事件原因核查线索 |
 | 生产趋势 | 完工量、计划达成率、产线排名与最近七日线性趋势斜率 |
 | 算法验收 | Linear/Logistic Regression、Decision Tree、Random Forest、KMeans、Isolation Forest 六套可复现 Recipe |
 | 审核与解释 | EvidenceBundle、SQL Artifact、结果快照、图表坐标轴、节点耗时和运行记录 |
+| 问析质量评测 | 6 项质量门禁、16 个固定 RAG 案例、最近 50 次真实运行、歧义澄清漏斗 |
+| 结果导出 | 查询明细 UTF-8 CSV、当前分析图表 PNG；导出内容附带可读字段名、轴标题与单位 |
 | 模型配置 | 前端填写并验证 DeepSeek API Key，可选择 `deepseek-v4-pro` 或 `deepseek-v4-flash` |
 
 ## 技术架构
@@ -224,7 +227,7 @@ npm run start:local
 DeepSeek API Key 只允许在前端运行时配置：
 
 1. 打开工作台；
-2. 进入“模型配置 08”；
+2. 进入“模型配置 09”；
 3. 选择 `deepseek-v4-pro` 或 `deepseek-v4-flash`；
 4. 填写 API Key，点击“保存并验证连接”。
 
@@ -237,6 +240,7 @@ Key 只保存在当前 FastAPI 进程内存中，不写数据库、不写 `.env`
 - `GET/POST/PUT/DELETE /api/v1/knowledge/*`：业务知识与指标口径；
 - `POST /api/v1/rag/search`：混合 RAG EvidenceBundle；
 - `POST /api/v1/agent/runs`：通用智能问析；
+- `GET /api/v1/agent/evaluation/overview`：问析质量评测、RAG 金标集和最近运行审计；
 - `POST /api/v1/agent/quality/brief`：质量分析简报；
 - `POST /api/v1/agent/equipment/diagnosis`：设备异常诊断；
 - `POST /api/v1/agent/production/trend`：生产趋势分析；

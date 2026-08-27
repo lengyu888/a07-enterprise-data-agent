@@ -36,7 +36,7 @@ def main() -> None:
 
         page.get_by_role("button", name="启动智能问析 →").click()
         assert page.get_by_text("DeepSeek 正在推理并生成 SQL").is_visible()
-        page.get_by_text("8 / 8 COMPLETED", exact=True).wait_for(timeout=180_000)
+        page.get_by_text("8 STEPS COMPLETED", exact=True).wait_for(timeout=180_000)
 
         assert page.locator(".trace-rail article").count() == 8
         assert page.get_by_text("SQLGLOT PASSED", exact=True).is_visible()

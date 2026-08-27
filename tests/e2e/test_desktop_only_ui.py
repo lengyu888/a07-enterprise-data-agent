@@ -41,7 +41,7 @@ def main() -> None:
         page.goto(BASE_URL, wait_until="networkidle")
         expect(page.locator(".shell")).to_be_visible()
         expect(page.locator(".desktop-only-gate")).to_be_hidden()
-        expect(page.locator(".view-nav button")).to_have_count(8)
+        expect(page.locator(".view-nav button")).to_have_count(9)
         assert page.locator(".view-nav").evaluate(
             "element => element.scrollWidth <= element.clientWidth"
         )
@@ -54,7 +54,8 @@ def main() -> None:
             "设备诊断 05",
             "生产趋势 06",
             "智能问析 07",
-            "模型配置 08",
+            "问析评测 08",
+            "模型配置 09",
         ]:
             page.get_by_role("button", name=button_name).click()
             assert no_page_overflow(page)

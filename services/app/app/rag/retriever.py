@@ -18,6 +18,15 @@ TOPIC_TERMS = {
 
 
 def _topic(question: str) -> str | None:
+    # Domain nouns take precedence over generic analytical words.  In
+    # particular, "非计划停机趋势" contains both "计划" and "趋势", but is
+    # unequivocally an equipment question rather than a production question.
+    if any(term in question for term in ("设备", "停机", "宕机", "报警", "故障")):
+        return "equipment"
+    if any(term in question for term in ("质量", "良率", "合格率", "不良率", "缺陷率", "缺陷", "检验")):
+        return "quality"
+    if any(term in question for term in ("生产", "产量", "完工", "达成率", "完成率", "产线")):
+        return "production"
     scored = {topic: sum(term in question for term in terms) for topic, terms in TOPIC_TERMS.items()}
     topic, score = max(scored.items(), key=lambda item: item[1])
     return topic if score else None
@@ -39,6 +48,11 @@ def _expanded_terms(question: str) -> list[str]:
 def _explicit_metric_code(question: str, topic: str | None) -> str | None:
     if topic == "quality" and any(term in question for term in ("Pareto", "帕累托", "缺陷类型", "缺陷数量")):
         return "defect_count"
+    if topic == "equipment":
+        if "报警" in question and "次数" in question:
+            return "alarm_count"
+        if any(term in question for term in ("停机", "宕机")):
+            return "downtime_count" if "次数" in question else "downtime_minutes"
     with get_engine().connect() as connection:
         metrics = [dict(row) for row in connection.execute(text(
             "SELECT metric_code, metric_name, topic_code FROM app.metric WHERE status='published' ORDER BY length(metric_name) DESC"

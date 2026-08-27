@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 from app.agent.analysis_graph import HybridAnalysisGraph, SUPPORTED_QUESTIONS
 from app.agent.algorithm_suite import ALGORITHM_ORDER, evaluate_algorithm_suite, list_algorithm_recipes
+from app.agent.clarification_graph import ClarificationGraph, UnsafeQuestionError
 from app.agent.equipment_anomaly_graph import EquipmentAnomalyGraph
 from app.agent.production_trend_graph import ProductionTrendGraph
 from app.agent.quality_brief_graph import build_quality_brief
@@ -27,14 +28,46 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, default=str)
 
 
-def run_quality_analysis(question: str) -> dict[str, Any]:
+def run_quality_analysis(question: str, clarification_id: str | None = None) -> dict[str, Any]:
+    engine = get_engine()
+    try:
+        preflight = ClarificationGraph().invoke(question)
+    except UnsafeQuestionError as exc:
+        raise AgentRunError(str(exc), "not-created", unsupported=True) from exc
+
+    if preflight["status"] == "needs_clarification":
+        new_clarification_id = str(uuid4())
+        with engine.begin() as connection:
+            connection.execute(text("""
+                INSERT INTO app.clarification_event
+                    (clarification_id, original_question, detected_scene, missing_fields, options)
+                VALUES (:clarification_id, :question, :scene, CAST(:missing_fields AS jsonb), CAST(:options AS jsonb))
+            """), {
+                "clarification_id": new_clarification_id, "question": question,
+                "scene": preflight.get("detected_scene"),
+                "missing_fields": _json(preflight["missing_fields"]), "options": _json(preflight["options"]),
+            })
+        return {
+            "status": "needs_clarification", "clarification_id": new_clarification_id,
+            "question": question, "detected_scene": preflight.get("detected_scene"),
+            "missing_fields": preflight["missing_fields"], "prompt": preflight["prompt"],
+            "options": preflight["options"], "trace": preflight["trace"],
+        }
+
+    if clarification_id:
+        with engine.begin() as connection:
+            connection.execute(text("""
+                UPDATE app.clarification_event
+                SET resolved_question=:question, resolved_at=NOW()
+                WHERE clarification_id=CAST(:clarification_id AS uuid) AND resolved_at IS NULL
+            """), {"question": question, "clarification_id": clarification_id})
+
     settings = get_settings()
     if not settings.deepseek_configured:
-        raise AgentRunError("DeepSeek Secret 未配置，无法运行 Agent", "not-created")
+        raise AgentRunError("DeepSeek 尚未配置，请先进入模型配置页面填写 API Key", "not-created")
 
     run_id = str(uuid4())
     started = time.perf_counter()
-    engine = get_engine()
     with engine.begin() as connection:
         connection.execute(
             text(
@@ -48,6 +81,7 @@ def run_quality_analysis(question: str) -> dict[str, Any]:
 
     try:
         state = HybridAnalysisGraph(settings).invoke(question, run_id)
+        state["trace"] = preflight["trace"] + state["trace"]
         duration_ms = max(1, round((time.perf_counter() - started) * 1000))
         with engine.begin() as connection:
             for index, step in enumerate(state["trace"], start=1):
@@ -66,11 +100,11 @@ def run_quality_analysis(question: str) -> dict[str, Any]:
                 text(
                     """
                     INSERT INTO app.sql_artifact
-                        (run_id, sql_text, validation_status, referenced_tables, executed_at, row_count)
-                    VALUES (:run_id, :sql, 'passed', CAST(:tables AS jsonb), NOW(), :row_count)
+                        (run_id, sql_text, validation_status, referenced_tables, executed_at, row_count, repair_count)
+                    VALUES (:run_id, :sql, 'passed', CAST(:tables AS jsonb), NOW(), :row_count, :repair_count)
                     """
                 ),
-                {"run_id": run_id, "sql": state["sql"], "tables": _json(state["referenced_tables"]), "row_count": len(state["rows"])},
+                {"run_id": run_id, "sql": state["sql"], "tables": _json(state["referenced_tables"]), "row_count": len(state["rows"]), "repair_count": state.get("repair_count", 0)},
             )
             connection.execute(
                 text(
@@ -268,7 +302,7 @@ def capabilities() -> dict[str, Any]:
         "phase": "phase-6",
         "supported_scenes": ["quality", "equipment", "production"],
         "supported_questions": SUPPORTED_QUESTIONS,
-        "pipeline": ["retrieve", "plan", "text_to_sql", "validate_sql", "repair_sql", "execute_sql", "build_chart", "summarize"],
+        "pipeline": ["clarify", "retrieve", "plan", "text_to_sql", "validate_sql", "repair_sql", "execute_sql", "build_chart", "summarize"],
         "limits": {"max_rows": 100, "statement_timeout_ms": 5000, "sql_mode": "read_only", "max_sql_repairs": 2},
         "rag": {"channels": ["exact", "pg_trgm", "pgvector"], "fusion": "RRF", "top_k": 10},
         "quality_specialization": ["process_yield", "defect_pareto", "daily_yield_trend", "month_over_month", "management_brief"],
