@@ -21,8 +21,6 @@ services:
 
   app:
     image: a07-agent-app:0.9.2
-    build:
-      context: ./services/app
     environment:
       APP_ENV: local
       APP_VERSION: 0.9.2
@@ -46,8 +44,6 @@ services:
 
   web:
     image: a07-agent-web:0.9.2
-    build:
-      context: ./apps/web
     ports:
       - "${WEB_PORT:-8080}:80"
     depends_on:

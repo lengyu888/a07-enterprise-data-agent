@@ -10,16 +10,14 @@ from app.api.catalog import router as catalog_router
 from app.api.data_import import router as data_import_router
 from app.api.knowledge import router as knowledge_router
 from app.api.rag import router as rag_router
-from app.catalog.service import refresh_catalog
 from app.core.config import (
     get_runtime_deepseek_api_key,
     get_settings,
     replace_runtime_deepseek_config,
 )
 from app.core.database import check_database, read_project_stage
-from app.core.migrations import run_migrations
+from app.core.startup import initialize_application_with_retry
 from app.integrations.deepseek import DeepSeekGateway
-from app.rag.indexer import ensure_index
 
 
 class HealthResponse(BaseModel):
@@ -53,9 +51,7 @@ def deepseek_config_status(*, verified: bool | None = None) -> dict[str, object]
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     get_settings()
-    run_migrations()
-    refresh_catalog()
-    ensure_index()
+    initialize_application_with_retry()
     yield
 
 

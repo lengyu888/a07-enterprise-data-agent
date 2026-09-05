@@ -2,7 +2,7 @@
 
 面向浙江省大学生服务外包创新应用大赛 A07 赛题的制造业数据智能问析系统。项目以 **DeepSeek + LangGraph + RAG + Text-to-SQL** 为核心技术链路，让业务人员使用自然语言完成质量分析、设备异常诊断和生产趋势分析，并保留证据、SQL、数据结果与 Agent 轨迹供复核。
 
-当前版本：`0.9.1`，比赛功能收口版。系统只面向电脑网页端，统一推荐使用 `1440 × 900` 分辨率演示与验收。
+当前版本：`0.9.2`，比赛功能收口与离线部署修复版。系统只面向电脑网页端，统一推荐使用 `1440 × 900` 分辨率演示与验收。
 
 ## 项目定位
 
@@ -101,7 +101,7 @@ A07 Agent/
 │  ├─ app/rag/                # 索引构建与混合检索
 │  ├─ app/integrations/       # DeepSeek 适配器
 │  └─ migrations/             # 业务数据和各阶段增量迁移
-├─ infra/postgres/init/       # PostgreSQL 首次初始化
+├─ infra/postgres/init/       # 本地数据库初始化兼容脚本
 ├─ scripts/local/             # 本地安装、启停与验收脚本
 ├─ scripts/test-stage*.ps1    # Docker 阶段验收脚本
 ├─ tests/e2e/                 # 桌面端 Playwright 测试
@@ -131,20 +131,41 @@ docker compose down
 
 ### 使用离线镜像压缩包
 
-收到项目源码和离线镜像包后，在项目根目录执行：
+接收方只需要两个文件，不需要项目源码：
+
+- `a07-agent-images-0.9.2.tar.gz`：App、Web 和 PostgreSQL 三个镜像；
+- `compose.offline.yml`：无构建目录、无宿主机初始化脚本挂载的独立编排文件。
+
+将两个文件放在同一目录后执行：
 
 ```powershell
-docker load -i "a07-agent-images-0.9.1.tar.gz"
-docker compose up -d --no-build
-docker compose ps
+docker load -i "a07-agent-images-0.9.2.tar.gz"
+docker compose -f compose.offline.yml up -d
+docker compose -f compose.offline.yml ps
 ```
 
-`--no-build` 会强制 Compose 使用已加载的 `a07-agent-app:0.9.1` 和
-`a07-agent-web:0.9.1`，不会因接收方的本地构建环境不同而生成另一份镜像。
+离线编排固定使用 `a07-agent-app:0.9.2` 和 `a07-agent-web:0.9.2`，不会触发本地构建。
 离线包对 App/Web 各保留一个明确版本标签，不再同时保存 `latest` 标签。
+后端镜像会自行创建扩展、Schema、迁移表和演示数据，不依赖接收方存在
+`infra/postgres/init`。后端只有在数据库、迁移、目录和 RAG 索引全部就绪后才通过
+健康检查，Web 随后启动；首次启动通常需要一至两分钟，不需要添加固定 45 秒等待。
 
 若使用自己编写的 Compose，数据库连接串可写为 `postgresql://...` 或
 `postgresql+psycopg://...`；App 会统一使用镜像内已安装的 psycopg 3 驱动。
+
+若从旧版失败环境升级后仍异常，可先查看真实后端错误：
+
+```powershell
+docker compose -f compose.offline.yml ps -a
+docker compose -f compose.offline.yml logs --tail 200 postgres app web
+```
+
+仅当旧环境没有需要保留的数据时，才可执行以下命令删除旧测试卷后重新启动：
+
+```powershell
+docker compose -f compose.offline.yml down -v
+docker compose -f compose.offline.yml up -d
+```
 
 ## 方式二：Windows 本地部署
 
@@ -283,7 +304,8 @@ Key 只保存在当前 FastAPI 进程内存中，不写数据库、不写 `.env`
 
 - **后端启动提示数据库不可用**：检查 PostgreSQL 服务与 `services/app/.env` 中的主机、端口和口令。
 - **提示 `extension "vector" is not available`**：本机 PostgreSQL 尚未安装 pgvector；安装扩展或使用“仅数据库 Docker”方式。
-- **首次安装或构建较慢**：系统需要下载中文 embedding 模型；首次启动还会执行数据迁移并建立向量索引。
+- **首次安装或构建较慢**：源码构建需要下载中文 embedding 模型；镜像首次启动仍需执行数据迁移并建立向量索引。
+- **前端持续 502**：不要只延长启动等待；先执行 `docker compose ps -a` 和 `docker compose logs app`。离线部署必须使用与镜像包同版的 `compose.offline.yml`。
 - **8000/8080 端口被占用**：先执行本地 `stop.ps1` 或 `docker compose down`。
 - **DeepSeek 显示未配置**：这是正常的安全设计；每次后端重启后都需要在前端重新填写 Key。
 

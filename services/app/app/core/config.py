@@ -2,7 +2,7 @@ from functools import lru_cache
 from threading import RLock
 from typing import ClassVar, Literal
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -45,8 +45,10 @@ class Settings(BaseSettings):
 
     app_name: str = "A07 企业数据底座智能问析 Agent"
     app_env: str = "local"
-    app_version: str = "0.9.1"
+    app_version: str = "0.9.2"
     database_url: str = "postgresql+psycopg://a07_app:a07_local_dev_change_me@postgres:5432/a07_agent"
+    startup_max_attempts: int = Field(default=40, ge=1, le=120)
+    startup_retry_delay_seconds: float = Field(default=2.0, ge=0.1, le=10.0)
 
     deepseek_base_url: ClassVar[str] = "https://api.deepseek.com"
     deepseek_reasoning_effort: ClassVar[Literal["high", "max"]] = "high"
